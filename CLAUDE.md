@@ -49,3 +49,4 @@ The `Simulation.BU_PLASTICITY` variant is being developed and is not yet committ
 - No panel plots the bottom-up results yet. `f4f_sen_dendrite` assumes neuron i is wired to stimulus i, so it is only meaningful for the default model.
 - Two bugs in the uncommitted diff were fixed along the way: `torch.from_numpy` was called on a tensor (broke every simulation), and `get_path()` had `DEFAULT` pointing at `results_bup.pickle` (now restored).
 - `play.py` is a scratch script and `Overview.pdf` is a manuscript overview; both are staged but were not part of the original repo.
+- `sandbox/` is a self-contained, deletable package for trying out bottom-up plasticity rules and hyperparameter sweeps without changing `l5apical`. See `sandbox/README.md`. Its `simulate.py` mirrors the main trial loop; run `python -m sandbox.check_reproduces` after editing either.
