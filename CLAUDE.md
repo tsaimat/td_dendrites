@@ -39,3 +39,13 @@ To run one simulation type: `l5apical.simulations.simulate_seeds(Simulation.X)`;
 - `parula.py`: Matlab parula colormap data.
 
 Adding a new simulation variant means: add an enum member in `Simulation`, a path in `get_path()`, parameter handling in `get_params()`, any per-trial branch in `simulate_seed()`, a call in `run()`, an entry in `save_trial_outcomes_matlab()` and `load_smith_perf()`, and a matching filename and `perf_*` variable in `Smith/getperfs.m`.
+
+## Work in progress (as of 2026-09-24)
+
+The `Simulation.BU_PLASTICITY` variant is being developed and is not yet committed. State of the work:
+
+- Code is done: `N_Z_BU_PLASTICITY = 30` distractors, random L1-normalized `w_bas` init shared with the mixed model, soft-bounded basal plasticity in the trial loop, gain recording via a neuron-space mask, Matlab script preallocates from the file list. A 200-trial smoke test ran for default, mixed and bottom-up; the default run reproduced the committed `results_default.pickle` exactly.
+- Data is stale: `results/results_bup.pickle`, `Smith/outcomes_bup.mat` and the `perf_bup` rows in `Smith/performances.mat` were generated when the variant was a no-op (identity init, so identical to default). Regenerate with `simulate_seeds(Simulation.BU_PLASTICITY)`, `save_trial_outcomes_matlab()`, `Smith/getperfs.m` in Matlab, then `python main.py perf`.
+- No panel plots the bottom-up results yet. `f4f_sen_dendrite` assumes neuron i is wired to stimulus i, so it is only meaningful for the default model.
+- Two bugs in the uncommitted diff were fixed along the way: `torch.from_numpy` was called on a tensor (broke every simulation), and `get_path()` had `DEFAULT` pointing at `results_bup.pickle` (now restored).
+- `play.py` is a scratch script and `Overview.pdf` is a manuscript overview; both are staged but were not part of the original repo.

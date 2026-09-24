@@ -129,7 +129,7 @@ def get_path(simulation: Simulation = Simulation.DEFAULT, theta_0: float = THETA
     """
     results_dir = ROOT_DIR / 'results'
     if simulation == Simulation.DEFAULT:
-        path = results_dir / 'results_bup.pickle'
+        path = results_dir / 'results_default.pickle'
     elif simulation == Simulation.APICAL_INHIBITION:
         path = results_dir / 'results_perturbed.pickle'
     elif simulation == Simulation.MIXED_SELECTIVITY:
