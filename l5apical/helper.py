@@ -15,7 +15,8 @@ SMITH_DIR = ROOT_DIR / 'Smith'  # Directory containing matlab scripts and matlab
 LR = 0.016  # Common learning rate tuned to replicate experimental number of trials necessary to become expert
 THETA = 0.1  # Value of the activity threshold used in the w_ap plasticity rule
 N_Z = 203  # Number of total neurons (in the pure selectivity model)
-N_Z_MIXED = 17  # Number of total neurons (in the mixed-selectivity model)
+N_Z_MIXED = 14  # Number of distractor stimuli (in the mixed-selectivity model)
+N_Z_BU_PLASTICITY = 30  # Number of distractor stimuli (in the bottom-up plasticity model)
 N_TRIALS = 1800  # Default number of trials simulated
 N_TRIALS_AP_INH = 4000  # Number of trials in case the apical dendrites are inhibited for the first 1800 trials
 MAX_GAIN = 10.  # Maximum possible apical gain
@@ -80,6 +81,7 @@ class Simulation(Enum):
     APICAL_INHIBITION = 1
     MIXED_SELECTIVITY = 2
     SMITH_PERFORMANCE = 3
+    BU_PLASTICITY = 4
 
 
 def apical_transfer(x) -> torch.Tensor:
@@ -115,7 +117,7 @@ def time_step_to_time(t: int) -> float:
     :param t: Time step in the simulation
     :return: Time in seconds
     """
-    return t + TONE_T / HZ
+    return (t + TONE_T) / HZ
 
 
 def get_path(simulation: Simulation = Simulation.DEFAULT, theta_0: float = THETA_0) -> Path:
@@ -127,14 +129,15 @@ def get_path(simulation: Simulation = Simulation.DEFAULT, theta_0: float = THETA
     """
     results_dir = ROOT_DIR / 'results'
     if simulation == Simulation.DEFAULT:
-        path = results_dir / 'results_default.pickle'
+        path = results_dir / 'results_bup.pickle'
     elif simulation == Simulation.APICAL_INHIBITION:
         path = results_dir / 'results_perturbed.pickle'
     elif simulation == Simulation.MIXED_SELECTIVITY:
         path = results_dir / f'mixed_selectivity/t_{theta_0}.pickle'
     elif simulation == Simulation.SMITH_PERFORMANCE:
         path = SMITH_DIR / 'performances.mat'
-
+    elif simulation == Simulation.BU_PLASTICITY:
+        path = results_dir / 'results_bup.pickle'
     else:
         raise ValueError(simulation)
 
@@ -167,6 +170,6 @@ def makedirs() -> None:
     """
     Creates directories in which simulation outcomes and panels are saved.
     """
-    for subdir in ['results/mixed_selectivity', 'panels/svg', 'gogo']:
+    for subdir in ['results/mixed_selectivity', 'panels/svg']:
         p = ROOT_DIR / subdir
         p.mkdir(parents=True, exist_ok=True)

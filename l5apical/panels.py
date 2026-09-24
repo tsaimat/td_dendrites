@@ -10,6 +10,7 @@ from pickle import load
 from scipy import stats
 from l5apical.parula import PARULA
 from l5apical.helper import *
+from l5apical.simulations import get_params
 
 # Colors
 COL_SENSORY = "#2985C4"
@@ -62,9 +63,10 @@ def get_results(simulation: Simulation = Simulation.DEFAULT, expert_aligned: boo
     with open(get_path(simulation=simulation, theta_0=theta_0), 'rb') as handle:
         results = load(handle)
     if expert_aligned:
+        n_trials = get_params(simulation=simulation, theta_0=theta_0)[8]
         expert_t = [int(results[s][K_EXPERT_T]) for s in range(N_SEEDS)]
         before_expert = min(expert_t)
-        after_expert = N_TRIALS - max(expert_t)
+        after_expert = n_trials - max(expert_t)
         sample_ranges = [[expert_t[s] - before_expert, expert_t[s] + after_expert] for s in range(N_SEEDS)]
         for s in range(N_SEEDS):
             for k in [K_LEARNING_T, K_EXPERT_T]:
@@ -1502,4 +1504,23 @@ def plot_all(saving: bool = True) -> None:
 
 
 if __name__ == '__main__':
-    plot_all()
+    # plot_all()
+    saving = False
+    f4c_performance_eg(saving=saving)  # Performance example for default simulation
+    f4d_expert_v_pred(saving=saving)  # Expert V pred trace for Hit and CR trials
+    f4e_apical_dendrites_raster_plots(saving=saving)  # S1 apical activity raster plot for Hit and CR
+    f4e_soma_raster_plots(saving=saving)  # S1 output raster plot
+    f4f_sen_dendrite(saving=saving)  # w^ap and gain
+    f4g_apical_window_traces(saving=saving)  # Apical activity evolution with learning for different time windows
+    f4h_performance(saving=saving)  # Performances traces with and without apical inhibition
+    f4h_expert_trials(saving=saving)  # Expert times
+    f4h_w_ap(saving=saving)  # Top-down w^ap to S1 neurons
+    fs11bc_transfer_f(saving=saving)  # Transfer functions
+    fs11d_expert_v_pred(saving=saving)  # Expert V pred trace for FA trials
+    fs11e_apical_dendrites_raster_plots(saving=saving)  # S1 apical activity raster plot for FA
+    fs12a_performance_eg(saving=saving)  # Performance example for mixed selectivity simulation
+    fs12b_wap_traces(saving=saving)  # Evolution of apical synaptic weights
+    fs12b_theta0(saving=saving)  # Dependence on the theta_0 parameter
+    fs12c_selectivity_traces(saving=saving)  # Evolution of the selectivity with learning
+    fs12cd_selectivity_distribution(saving=saving)  # Distribution of the selectivity before and after learning
+    fs13_apical_dendrites_traces_boxplots(saving=saving)  # S1 apical activity traces and boxplots for each trial type

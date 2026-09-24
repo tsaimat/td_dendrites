@@ -16,7 +16,6 @@ Finally, all the panels can be plotted by running:
 If no argument is provided, the script will default to plotting all the panels.
 """
 
-import sys
 import l5apical
 
 __author__ = "Matthias Chinyen Tsai"
@@ -25,25 +24,10 @@ __version__ = "2.0.0"
 
 if __name__ == '__main__':
 
-    if len(sys.argv) == 1:
-        l5apical.panels.plot_all()
-    else:
-        if str(sys.argv[1]) == 'plot':
-            l5apical.panels.plot_all()
+    print('\nSimulating with bottom-up plasticity:')
+    # l5apical.simulations.simulate_seeds(simulation=l5apical.helper.Simulation.BU_PLASTICITY)
 
-        elif str(sys.argv[1]) == 'simulate':
-            l5apical.simulations.run()
+    # Save the learning outcomes in a format that can be processed by a matlab script to extract the performance traces
+    # l5apical.simulations.save_trial_outcomes_matlab()
 
-        elif str(sys.argv[1]) == 'perf':
-            l5apical.simulations.load_smith_perf()
-
-        # Explain correct usage syntax
-        else:
-            print("Proper usage requires argument 'plot' or 'simulate' or 'perf'. To plot all the panels enter: \n"
-                  ">> python main.py plot\n"
-                  "\nTo run all the simulations enter:\n"
-                  ">> python main.py simulate\n"
-                  "\nWarning: if you rerun all the simulations, you will also need to run the Matlab script getperfs.m "
-                  "located in the Smith directory after which you will have to enter:\n"
-                  ">> python main.py perf\n"
-                  "\nIf you fail to do so, you might corrupt the results and might not be able to plot the panels.")
+    # l5apical.simulations.load_smith_perf()

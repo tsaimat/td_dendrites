@@ -1,11 +1,12 @@
 nrseeds = 10;
 maxres = 1;
 corprob = 0.5;
-lfilenames = ["outcomes_default.mat", "outcomes_apical_inhibition.mat", 'outcomes_mixed.mat'];
-expert_t = zeros(3, nrseeds);
-learning_t = zeros(3, nrseeds);
+lfilenames = ["outcomes_default.mat", "outcomes_apical_inhibition.mat", 'outcomes_mixed.mat', 'outcomes_bup.mat'];
+nrfiles = length(lfilenames);
+expert_t = zeros(nrfiles, nrseeds);
+learning_t = zeros(nrfiles, nrseeds);
 
-for f = 1:3
+for f = 1:nrfiles
     load(lfilenames(f))
     n_trials = size(correct_trials, 2);
     x = 0:n_trials;
@@ -23,8 +24,9 @@ for f = 1:3
         perf_apical_inhibition = perf_traces;
     elseif f == 3
         perf_mixed = perf_traces;
+    elseif f == 4
+        perf_bup = perf_traces;
     end
-    
 end
 
-save("performances.mat", "expert_t", "learning_t" ,"perf_apical_inhibition", "perf_default", "perf_mixed")
+save("performances.mat", "expert_t", "learning_t" ,"perf_apical_inhibition", "perf_default", "perf_mixed", "perf_bup")

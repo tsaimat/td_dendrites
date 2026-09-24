@@ -5,7 +5,7 @@ files in the 'results' directory. The performance traces then have to be extract
 (from Smith et al., 2004) located in the 'Smith' directory and integrated into the pickle files by running the 'perf'
 command of the main script (which calls the load_smith_perf() function).
 """
-
+from warnings import warn
 from random import seed as rd_seed
 from random import shuffle as random_shuffle
 from pickle import load, dump, HIGHEST_PROTOCOL
@@ -29,7 +29,7 @@ class Agent:
 
     def integrate_input(self, input_vec: torch.Tensor) -> None:
         """
-        Sample an action, observe the resulting outcome and update the action-selection policy network
+        Append the current sensory state representation vector to the history of inputs and update the lick activity
         :param input_vec: Sensory state representation vector used as input for the policy network
         """
         self.lick_activity += torch.dot(self.policy_weights, input_vec)
@@ -67,7 +67,7 @@ class Agent:
 
         return reward, lick, correct
 
-    def update(self, reward: float, x_som: torch.Tensor = None):
+    def update(self, reward: float, x_som: torch.Tensor):
         """
         Update policy network
         :param reward: The reward with which to update the weights
@@ -79,14 +79,15 @@ class Agent:
 
 
 def get_params(simulation: Simulation, theta_0: float
-               ) -> tuple[int, int, int, list[float], float, torch.Tensor, torch.Tensor, torch.Tensor]:
+               ) -> tuple[int, int, int, list[float], float, torch.Tensor, torch.Tensor, torch.Tensor, int]:
     """
     Initialize parameters depending on the simulation type.
     :param simulation: Simulation identifier
     :param theta_0: Value of the theta_0 parameter
     :return: Tuple containing the total number of basal inputs, the number of distractor input, the number of pyramidal
     neurons (also corresponding to the size of the state representation vector), the probabilities of each distractor to
-    be activated in a trial, the common learning rate parameter, an array of theta values for each pyramidal neuron.
+    be activated in a trial, the common learning rate parameter, an array of theta values for each pyramidal neuron,
+    the number of trials of the simulation.
     """
 
     n_task_stim = 3  # Number of task-relevant stimuli
@@ -95,16 +96,22 @@ def get_params(simulation: Simulation, theta_0: float
     if simulation in [Simulation.DEFAULT, Simulation.APICAL_INHIBITION]:
         n_noise_stim = N_Z - n_task_stim
     elif simulation == Simulation.MIXED_SELECTIVITY:
-        n_noise_stim = 14
+        n_noise_stim = N_Z_MIXED
+    elif simulation == Simulation.BU_PLASTICITY:
+        n_noise_stim = N_Z_BU_PLASTICITY
     else:
         raise ValueError(simulation)
+
+    n_trials = N_TRIALS_AP_INH if simulation.value == Simulation.APICAL_INHIBITION.value else N_TRIALS
 
     # Basal weights, plasticity thresholds (theta) and the Bernoulli distributions of the distractor stimuli
     n_stim = n_task_stim + n_noise_stim
     weights_apical = 0.05 + torch.rand(N_Z) * 0.1  # Sensory dendrite synaptic strengths
     noise_probs = [float(i / (n_noise_stim + 1)) for i in range(1, n_noise_stim + 1)]
     random_shuffle(noise_probs)
-    if simulation == Simulation.MIXED_SELECTIVITY:
+    if simulation in [Simulation.MIXED_SELECTIVITY, Simulation.BU_PLASTICITY]:
+        # Random mixed-selectivity basal weights: each neuron's afferents are L1-normalized, so every weight lies in
+        # [0, 1] and the weights of one neuron sum to 1. The bottom-up plasticity rule (1 - w) * w keeps them there.
         w_bas = torch.nn.functional.normalize(torch.rand((n_stim, N_Z)) ** 6, p=1., dim=0)
         probs = torch.tensor([1, 0.5, 0.5] + noise_probs) / N_TIME_STEPS
         thetas = theta_0 * torch.matmul(probs[:], w_bas) + BKG
@@ -112,7 +119,7 @@ def get_params(simulation: Simulation, theta_0: float
         w_bas = torch.diag(torch.ones(N_Z))
         thetas = THETA * torch.ones(N_Z) + BKG
 
-    return n_stim, n_noise_stim, N_Z, noise_probs, LR, w_bas, thetas.float(), weights_apical
+    return n_stim, n_noise_stim, N_Z, noise_probs, LR, w_bas, thetas.float(), weights_apical, n_trials
 
 
 def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, theta_0: float = THETA_0) -> dict:
@@ -131,8 +138,9 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, th
 
     # Initialization of basic params
     apical_active = simulation.value != Simulation.APICAL_INHIBITION.value
-    n_trials = N_TRIALS_AP_INH if simulation.value == Simulation.APICAL_INHIBITION.value else N_TRIALS
-    n_inputs, noise_inputs, n_z, noise_ps, lr, w_bas, thetas, w_ap = get_params(simulation=simulation, theta_0=theta_0)
+    n_inputs, noise_inputs, n_z, noise_ps, lr, w_bas, thetas, w_ap, n_trials = get_params(
+        simulation=simulation, theta_0=theta_0
+    )
     tlr, lr_ap, plr, learning_rate = lr, lr, lr, lr  # Learning rates
 
     # Relevant simulation time steps (first simulated time step starts with the tone cue)
@@ -174,8 +182,8 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, th
         txt_in = texture_xs[texture]  # Get basal activation for sampled texture
         noise_in = torch.tensor([np.random.choice(a=[0, 1], p=[1-pr, pr]) for pr in noise_ps])  # Sample noise
         basal_input = torch.cat(tensors=(txt_in, noise_in), dim=0)  # Full basal activation vector
-        input_time_idxs = np.copy(base_input_time_idxs)  # Array for the timing of basal inputs
-        input_time_idxs[3:] = np.random.randint(low=0, high=outcome_t, size=noise_inputs)  # Random distractor timings
+        input_time_idxs = torch.tensor(np.copy(base_input_time_idxs))  # Array for the timing of basal inputs
+        input_time_idxs[3:] = torch.tensor(np.random.randint(low=0, high=outcome_t, size=noise_inputs))  # Random distractor timings
         input_time_idxs[:][basal_input < 0.5] = n_timings  # Timings of zero-inputs are set after the end of the trial
 
         # Storage variables
@@ -189,7 +197,7 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, th
         for t in range(outcome_t):
 
             # Simulate pyramidal neurons and compute state value estimate
-            current_idxs = torch.Tensor(input_time_idxs == t)  # Get the indices of currently non-zero basal inputs
+            current_idxs = input_time_idxs == t  # Boolean mask of the currently non-zero basal inputs
             x_in = torch.zeros((n_inputs,))  # Basal input vector
             x_in[current_idxs] = 1  # Set currently active basal inputs to 1
             x_bas = torch.matmul(x_in, w_bas) + x_bas_background  # Basal activations
@@ -201,14 +209,20 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, th
             # Update state value estimator, sensory dendrite afferent and sensory dendrite synaptic weight
             dw_weights += learning_rate * dv_hat_now * z_h[j, :] * K_V
             w_ap = torch.clamp(w_ap + lr_ap * x_pre_t[t] * (x_som - thetas) * (1 - w_ap) * w_ap, min=0, max=1)
+            if simulation == Simulation.BU_PLASTICITY:
+                w_bas = torch.clamp(w_bas + torch.outer(lr_ap * x_in, (x_som - thetas)) * (1 - w_bas) * w_bas,
+                                    min=0, max=1)
             x_pre_t[t] += tlr * (abs(dv_hat_now.item()) - x_pre_t[t])
 
             # Store variables of interest
             z_h[j, :] = GAMMA * z_h[j, :] + x_som.numpy()  # - BKG
             v_hat_h[j, 1 + t] = v_hat_h[j, t] / GAMMA + dv_hat_now.numpy()
             td_delta_h[j, t] = GAMMA * dv_hat_now
-            if simulation == Simulation.DEFAULT:
-                gain_h[j, current_idxs] = gains[current_idxs].detach().clone().numpy()
+            if simulation in (Simulation.DEFAULT, Simulation.BU_PLASTICITY):
+                # Record the gain of every neuron receiving basal drive now (identical to the stimulus mask for the
+                # identity w_bas of the default model, but also valid for the random w_bas of the bottom-up model)
+                driven = (x_bas - x_bas_background) > 0
+                gain_h[j, driven.numpy()] = gains[driven].detach().clone().numpy()
             if t == texture_t:
                 x_som_texture_h[j, :] = x_som.detach().clone().numpy()
 
@@ -253,9 +267,14 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, th
 
         # Record variables of interest for post-simulation analysis
         v_hat_h[j, outcome_t+1] = v_hat_h[j, outcome_t] - r_pred
-        d_sen_tx[j, outcome_t] = torch.mean(apical_transfer(sen_salience[tx_idxs]))
-        d_sen_t1[j, outcome_t] = apical_transfer(sen_salience[T1_IDX])
-        d_sen_t2[j, outcome_t] = apical_transfer(sen_salience[T2_IDX])
+        if apical_active:
+            d_sen_tx[j, outcome_t] = torch.mean(apical_transfer(sen_salience[tx_idxs]))
+            d_sen_t1[j, outcome_t] = apical_transfer(sen_salience[T1_IDX])
+            d_sen_t2[j, outcome_t] = apical_transfer(sen_salience[T2_IDX])
+        else:
+            d_sen_tx[j, outcome_t] = 0.
+            d_sen_t1[j, outcome_t] = 0.
+            d_sen_t2[j, outcome_t] = 0.
         w_ap_h[j, :] = w_ap
         x_pre_t_h[j, :-1] = x_pre_t
         x_pre_t_h[j, outcome_t] = abs(r_pred)
@@ -313,7 +332,8 @@ def save_trial_outcomes_matlab() -> None:
     """
     Save the arrays containing a bool for each trial describing whether the correct action was taken to matlab files
     """
-    for simulation in [Simulation.DEFAULT, Simulation.APICAL_INHIBITION, Simulation.MIXED_SELECTIVITY]:
+    for simulation in [Simulation.DEFAULT, Simulation.APICAL_INHIBITION, Simulation.MIXED_SELECTIVITY,
+                       Simulation.BU_PLASTICITY]:
         results_path = get_path(simulation=simulation)
         if simulation == Simulation.APICAL_INHIBITION:
             number_trials = N_TRIALS_AP_INH
@@ -324,6 +344,9 @@ def save_trial_outcomes_matlab() -> None:
         elif simulation == Simulation.MIXED_SELECTIVITY:
             number_trials = N_TRIALS
             perf_path = SMITH_DIR / 'outcomes_mixed.mat'
+        elif simulation == Simulation.BU_PLASTICITY:
+            number_trials = N_TRIALS
+            perf_path = SMITH_DIR / 'outcomes_bup.mat'
         else:
             raise ValueError(simulation)
 
@@ -346,7 +369,8 @@ def load_smith_perf() -> None:
     matlab_data = loadmat(str(get_path(simulation=Simulation.SMITH_PERFORMANCE)))
 
     # Load other results, insert performances into the results dictionary and save
-    simulations = [Simulation.DEFAULT, Simulation.APICAL_INHIBITION, Simulation.MIXED_SELECTIVITY]
+    simulations = [Simulation.DEFAULT, Simulation.APICAL_INHIBITION, Simulation.MIXED_SELECTIVITY,
+                   Simulation.BU_PLASTICITY]
     for sim in range(len(simulations)):
         results_path = get_path(simulation=simulations[sim])
         with open(results_path, 'rb') as handle:
@@ -360,6 +384,8 @@ def load_smith_perf() -> None:
                     load_results[seed][K_PERFORMANCE] = matlab_data["perf_default"][seed]
                 elif simulations[sim] == Simulation.MIXED_SELECTIVITY:
                     load_results[seed][K_PERFORMANCE] = matlab_data["perf_mixed"][seed]
+                elif simulations[sim] == Simulation.BU_PLASTICITY:
+                    load_results[seed][K_PERFORMANCE] = matlab_data["perf_bup"][seed]
                 else:
                     raise ValueError(simulations[sim])
 
@@ -386,6 +412,9 @@ def run():
     for t0 in get_thetas_0():
         simulate_seeds(simulation=Simulation.MIXED_SELECTIVITY, theta_0=t0)
 
+    print('\nSimulating with bottom-up plasticity:')
+    simulate_seeds(simulation=Simulation.BU_PLASTICITY)
+
     # Save the learning outcomes in a format that can be processed by a matlab script to extract the performance traces
     save_trial_outcomes_matlab()
 
@@ -393,5 +422,5 @@ def run():
     if get_path(simulation=Simulation.SMITH_PERFORMANCE).exists():
         load_smith_perf()
     else:
-        raise Warning('You will need to extract the performance traces with the Matlab scripts to be able to plot some '
-                      'of the panels')
+        warn('No performance traces found. Run Smith/getperfs.m in Matlab and then `python main.py perf` '
+             'before plotting the panels that need them.')
