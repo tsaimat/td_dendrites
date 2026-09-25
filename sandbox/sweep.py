@@ -23,7 +23,7 @@ from multiprocessing import Pool
 from pathlib import Path
 import numpy as np
 import torch
-from sandbox.simulate import DEFAULT_HP, simulate_seed_bu, summarize, SUMMARY_KEYS
+from sandbox.simulate import DEFAULT_HP, K_HP, simulate_seed_bu, summarize, SUMMARY_KEYS
 
 RESULTS_DIR = Path(__file__).parent / 'results'
 
@@ -51,7 +51,7 @@ def _worker(args):
         return name, seed, f"FAILED: {type(e).__name__}: {e}"
 
 
-def run_sweep(name: str, base: dict, grid: dict, seeds: int, workers: int) -> Path:
+def run_sweep(name: str, base: dict, grid: dict, seeds: int, workers: int, config_list: list[dict] = ()) -> Path:
     out_dir = RESULTS_DIR / name
     out_dir.mkdir(parents=True, exist_ok=True)
     keys = list(grid)
@@ -59,6 +59,8 @@ def run_sweep(name: str, base: dict, grid: dict, seeds: int, workers: int) -> Pa
     for values in itertools.product(*(grid[k] for k in keys)) if keys else [()]:
         hp = {**DEFAULT_HP, **base, **dict(zip(keys, values))}
         configs[config_name(hp, keys)] = hp
+    if config_list:  # explicit, non-cartesian list of configurations (each a dict of overrides, named by them)
+        configs = {'_'.join(f"{k}-{v}" for k, v in c.items()) or 'single': {**DEFAULT_HP, **base, **c} for c in config_list}
     jobs = [(n, hp, s) for n, hp in configs.items() for s in range(seeds)]
     print(f"{len(configs)} configurations x {seeds} seeds = {len(jobs)} runs on {workers} workers -> {out_dir}")
 
@@ -71,30 +73,56 @@ def run_sweep(name: str, base: dict, grid: dict, seeds: int, workers: int) -> Pa
                 print(f"\n  {n} seed {s} {res}")
     print()
 
-    rows = []
-    for n, hp in configs.items():
+    for n in configs:
         with open(out_dir / f"{n}.pickle", 'wb') as f:
             pickle.dump(results[n], f, protocol=pickle.HIGHEST_PROTOCOL)
-        good = [r for r in results[n] if not isinstance(r, str)]
-        row = {'config': n, **{k: hp[k] for k in DEFAULT_HP}, 'n_failed': seeds - len(good)}
+    with open(out_dir / 'grid.json', 'w') as f:
+        json.dump({'base': base, 'grid': grid, 'seeds': seeds}, f, indent=1)
+    print_summary(write_summary(out_dir))
+    return out_dir
+
+
+def write_summary(out_dir: Path) -> list[dict]:
+    """(Re)compute summary.csv of a sweep from its pickles (also usable after adding metrics to summarize())."""
+    rows = []
+    for p in sorted(out_dir.glob('*.pickle')):
+        with open(p, 'rb') as f:
+            results = pickle.load(f)
+        good = [r for r in results if not isinstance(r, str)]
+        hp = next((r[K_HP] for r in good), {})
+        row = {'config': p.stem, **{k: hp.get(k) for k in DEFAULT_HP}, 'n_failed': len(results) - len(good)}
         per_seed = [summarize(r) for r in good]
         for k in SUMMARY_KEYS:
-            vals = np.array([p[k] for p in per_seed], dtype=float)
+            vals = np.array([s[k] for s in per_seed], dtype=float)
             row[k] = np.nanmean(vals) if np.any(~np.isnan(vals)) else np.nan
+            if k == 'diverged':
+                row[k] = int(np.nansum(vals))  # number of seeds that diverged
             if k == 'expert_proxy':
                 row['expert_proxy_n_not_reached'] = int(np.isnan(vals).sum())  # seeds that never hit the threshold
         rows.append(row)
     with open(out_dir / 'summary.csv', 'w', newline='') as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0]))
         w.writeheader(); w.writerows(rows)
-    with open(out_dir / 'grid.json', 'w') as f:
-        json.dump({'base': base, 'grid': grid, 'seeds': seeds}, f, indent=1)
+    return rows
 
-    print(f"\n{'config':40s} {'failed':>6s} {'expert_proxy':>12s} {'final_perf':>10s} {'task_frac end':>13s} {'select. end':>11s} {'w_bas chg':>9s}")
+
+def print_summary(rows: list[dict]) -> None:
+    cols = [('diverged', '{:4.0f}'), ('expert_proxy', '{:7.0f}'), ('expert_proxy_n_not_reached', '{:4d}'), ('expert_after_lift', '{:7.0f}'),
+            ('perf_inhibited_end', '{:6.3f}'), ('final_perf', '{:6.3f}'), ('task_frac_end', '{:6.3f}'),
+            ('selectivity_end', '{:6.3f}'), ('det_tone', '{:4.0f}'), ('det_texture', '{:4.0f}'),
+            ('det_distractor', '{:4.0f}'), ('w_bas_change', '{:9.2e}'), ('w_bas_sum_mean', '{:6.2f}')]
+    short = {'diverged': 'ndiv', 'expert_proxy': 'expert', 'expert_proxy_n_not_reached': 'n_no', 'expert_after_lift': 'ex_lift',
+             'perf_inhibited_end': 'p_inh', 'final_perf': 'p_end', 'task_frac_end': 'taskfr', 'selectivity_end': 'selec',
+             'det_tone': 'dTon', 'det_texture': 'dTex', 'det_distractor': 'dDis',
+             'w_bas_change': 'w_change', 'w_bas_sum_mean': 'w_sum'}
+    width = max(len(r['config']) for r in rows)
+    print(f"\n{'config':{width}s} fail " + ' '.join(f"{short[k]:>{len(f.format(0))}s}" for k, f in cols))
     for r in rows:
-        print(f"{r['config']:40s} {r['n_failed']:6d} {r['expert_proxy']:12.0f} {r['final_perf']:10.3f} {r['task_frac_end']:13.3f} "
-              f"{r['selectivity_end']:11.3f} {r['w_bas_change']:9.2e}")
-    return out_dir
+        cells = []
+        for k, f in cols:
+            v = r.get(k, float('nan'))  # older summaries lack columns added later
+            cells.append(f.format(v) if not (isinstance(v, float) and np.isnan(v)) else f"{'-':>{len(f.format(0))}s}")
+        print(f"{r['config']:{width}s} {r['n_failed']:4d} " + ' '.join(cells))
 
 
 def main():
@@ -102,16 +130,20 @@ def main():
     ap.add_argument('--name', required=True, help='sweep name (subfolder of sandbox/results)')
     ap.add_argument('--set', nargs='*', default=[], metavar='KEY=VALUE', help='override a default hyperparameter')
     ap.add_argument('--grid', default='{}', help='JSON dict {hp: [values]} or path to such a file')
+    ap.add_argument('--configs', default='[]', help='JSON list of override dicts (non-cartesian alternative to --grid)')
     ap.add_argument('--seeds', type=int, default=3)
     ap.add_argument('--workers', type=int, default=4)
     a = ap.parse_args()
     base = {k: parse_value(v) for k, v in (kv.split('=', 1) for kv in a.set)}
-    grid = json.load(open(a.grid)) if Path(a.grid).is_file() else json.loads(a.grid)
-    unknown = set(base) | set(grid)
-    unknown -= set(DEFAULT_HP) | {'oja_decay', 'gate_power'}
+    def load_json(arg: str):
+        return json.loads(arg) if arg.lstrip()[:1] in '[{' else json.load(open(arg))
+    grid = load_json(a.grid)
+    config_list = load_json(a.configs)
+    unknown = set(base) | set(grid) | {k for c in config_list for k in c}
+    unknown -= set(DEFAULT_HP)
     if unknown:
-        print(f"warning: hyperparameters not in DEFAULT_HP (rule-specific?): {sorted(unknown)}")
-    run_sweep(a.name, base, grid, a.seeds, a.workers)
+        raise SystemExit(f"unknown hyperparameters: {sorted(unknown)}; known: {sorted(DEFAULT_HP)}")
+    run_sweep(a.name, base, grid, a.seeds, a.workers, config_list)
 
 
 if __name__ == '__main__':

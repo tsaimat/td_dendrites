@@ -19,16 +19,21 @@ def _short(n):
 def main(n_trials=100):
     gp, g = _short(n_trials)
     cases = [
-        (Simulation.BU_PLASTICITY, dict(rule='soft_bounded')),
+        (Simulation.BU_PLASTICITY, dict(rule='hebb', bound='soft')),
         (Simulation.DEFAULT, dict(rule='none', init='identity', n_noise=N_Z - 3)),
+        (Simulation.APICAL_INHIBITION, dict(rule='none', init='identity', n_noise=N_Z - 3, n_trials_inhibited=n_trials // 2)),
     ]
     ok = True
     for sim, hp in cases:
         S.get_params = g
+        S.N_TRIALS = n_trials // 2  # the main code lifts the inhibition at trial N_TRIALS
         ref = S.simulate_seed(sim, seed=0)
         S.get_params = gp
-        out = simulate_seed_bu({**hp, 'n_trials': n_trials}, seed=0)
-        bad = [k for k in ref if not np.array_equal(np.asarray(ref[k], float), np.asarray(out[k], float), equal_nan=True)]
+        S.N_TRIALS = N_TRIALS
+        out = simulate_seed_bu({**hp, 'n_trials': n_trials, 'store_full': True}, seed=0)
+        skip = {K_GAIN} if sim == Simulation.APICAL_INHIBITION else set()  # main code records gains only for DEFAULT/BU
+        bad = [k for k in ref if k not in skip
+               and not np.array_equal(np.asarray(ref[k], float), np.asarray(out[k], float), equal_nan=True)]
         print(f"{sim.name:14s} vs sandbox {hp}: {'IDENTICAL' if not bad else 'DIFFERS in ' + ', '.join(bad)}")
         ok &= not bad
     sys.exit(0 if ok else 1)
