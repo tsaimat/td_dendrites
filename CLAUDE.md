@@ -407,6 +407,35 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     that diverges is the one whose init has the most texture-dominant neurons (18); it ends with 9 texture
     detectors and half the pruning of the other seeds (`w_sum` 0.51 vs 0.2), so the texture-time drive grows until
     the value estimator diverges. The bound (`l1`) and a lower `lr_ap` (0.032) do not remove it.
+- Step 2 closed for now (sweeps `s2_bcm_inh`, `s2_hebb3`, `s2_hebb3_inh`, `s2_td32`, `s2_td32_inh`, `s2_ca32`,
+  `s2_ca32_inh`, summaries only). Two rate conditions, both with `lr_policy` 0.256 and `lr_trace` 0.256, 30
+  distractors, `n_z` 203; 10 seeds without inhibition, 5 in the inhibition protocol (numbers are median expert
+  trial / median expert trial after the lift; all seeds reach expert unless stated):
+  - TD 0.048 (the control's fully tuned rate): control power 10 814 / 1172, power 12 597 / 808. `calcium` (L1,
+    `lr_bas` 0.001, `ca_ltd_frac` 0.5, `ca_theta_p` 1.5, `ca_gamma_d` 1.0, `ca_beta` 2, `lr_ap` 0.128): power 10
+    666 / 573, power 12 497 / 486, all seeds. `hebb` (soft, `theta_0` 1): power 12 `theta_bas_0` 16, `lr_bas`
+    0.128, `lr_ap` 0.128: 340 but 3 of 10 diverge, inhibition 5 of 5 at 321; `theta_bas_0` 18: 425 (9 of 10),
+    inhibition 4 of 5 (one seed over-pruned during the 1800 blind trials); power 10 `theta_bas_0` 14: 4 of 10
+    diverge, 15: 9 of 10 at 430 but inhibition 4 of 5, 16: 8 of 10 at 704. `bcm` (soft, `bcm_e0_scale` 0.5):
+    power 10 `lr_bas` 0.064, `bcm_tau` 50: 429 (10 of 10) but 3 of 5 seeds collapse after the lift; power 12
+    `lr_bas` 0.032, `bcm_tau` 70: 386 (10 of 10), 4 of 5 at 373; every other `lr_bas` / `bcm_tau` / `lr_ap`
+    combination tried loses 1 to 3 of 5 seeds to the post-lift collapse.
+  - TD 0.032: control power 10 1084 / 1390, power 12 713 / 967. `hebb` power 10 (`theta_bas_0` 14, `lr_bas`
+    0.256, `lr_ap` 0.064): 417 / 534, all seeds; power 12 (`theta_bas_0` 16, `lr_bas` 0.128, `lr_ap` 0.128):
+    343 / 365, all seeds; the post-lift to no-inhibition ratio (1.28 at power 10) equals the control's (1.28).
+    `calcium` power 10 (`lr_bas` 0.001, `ca_gamma_d` 1.0): 847 / 760; (`lr_bas` 0.002, `ca_gamma_d` 0.5): 714 /
+    326, i.e. at this TD rate the faster calcium settings are again asymmetric; power 12 (`lr_bas` 0.001,
+    `ca_gamma_d` 1.0): 598 / 652. `bcm` still collapses after the lift in 2 to 3 of 5 seeds at both powers.
+  - Reading: `hebb` with its own basal threshold is the rule that meets the figure's requirement (large speed-up,
+    every seed, same no-inhibition and post-lift times as the control's ratio) but only at TD 0.032, where the
+    control is 25 percent slower than at its own optimum; at TD 0.048 its threshold window between divergence
+    (too many texture detectors in seeds with a rich texture init) and over-pruning during inhibition no longer
+    contains every seed. `calcium` meets the requirement at TD 0.048 with a smaller speed-up (17 to 18 percent
+    without inhibition, 40 to 50 percent after the lift). `bcm` is out: its sliding threshold cannot recover the
+    texture weights it loses during 1800 trials at gain 1. Candidate figure settings: control at power 10, TD
+    0.032 (1084 / 1390) versus `hebb` (417 / 534); or control at TD 0.048 (814 / 1172) versus `calcium` (666 /
+    573). Next: pick, port the chosen rule and constants into `helper.py` / `simulate_seed()`, regenerate
+    `results_bup.pickle` and the Matlab traces, and design the panels.
 - Open decision: the shared environment can be 203 neurons at `init_power` 12 (100 neurons also works for calcium but
   not for any gated rule). Calcium, `hebb` with `theta_bas_0` 16 and constant LTD with L1 (`rule` none, `lr_dep`
   0.016 `const`) are the settings that beat the control by a wide margin (pruning 392 to 547 trials, calcium 328
