@@ -59,6 +59,11 @@ column `diverged` counts such seeds.
   apical thresholds; a value builds separate basal thresholds `theta_bas_0 * expected drive + BKG`, leaving the apical
   rule's `theta_0` untouched). At `init_power` 12 a value of 16 puts the threshold at about 1.5 times the median
   neuron's strongest un-gained response.
+- `lr_dep`, `dep_form`: an extra subtractive depression term added to any rule's update (`lr_dep` 0, the default, is
+  off). `thr` is the depression half of `hebb`, `- lr_dep * x_in * relu(theta_bas - x_som)` with the basal threshold
+  from `theta_bas_0`, so every synapse active on a sub-threshold neuron is depressed by the gap and neurons above
+  threshold are spared; `const` depresses every active synapse by `lr_dep`. With `rule = none` it is a pruning-only
+  baseline. Used to test whether the apically gated rules (`us`, `burst`) work once they can prune like `hebb`.
 - `theta_gate`: per-neuron gate applied to any rule's update after the rule is evaluated (`None`, the default, is
   off): `pot` lets a neuron potentiate only while `x_som` exceeds its basal threshold (depression is untouched),
   `all` switches the basal plasticity of sub-threshold neurons off entirely. Used to test whether an apically gated

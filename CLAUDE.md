@@ -293,10 +293,40 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     they re-weight the apically selected neurons uniformly, cannot prune, and any rate that moves real weight
     grows the tone drive until the value estimator diverges. The gated rules would need a subtractive, drive-
     independent depression term (as in `hebb`) to be viable; that is a rule-design decision for the user.
+- Subtractive depression added to `us` and `burst` (2026-09-29, sandbox knobs `lr_dep` and `dep_form` in
+  `simulate.py`, default off; sweeps `dep_us_burst`, `dep_none`, `dep_inh`, `dep_mod`, summaries only; fast
+  condition unless stated, `theta_bas_0` 16, 5 seeds): the term is added to any rule's update, `thr` is the
+  depression half of `hebb` (`- lr_dep * x_in * relu(theta_bas - x_som)`), `const` depresses every active synapse
+  by `lr_dep`; with `rule = none` it is a pruning-only baseline.
+  - It helps, but the gated potentiation contributes nothing: for every bound, form and rate the numbers of `us`,
+    `burst` and the rule-free pruning baseline are identical to within a few trials (`us` / `burst` at `lr_bas`
+    0.0005 to 0.008 versus `none`: 398 / 396 / 397 for `const` L1 0.016; 896 / 885 / 895 for `thr` soft 0.016).
+  - `const` with the L1 bound is the fastest setting found in the whole project: 392 to 399 trials in 5 of 5
+    seeds at `lr_dep` 0.016 (control 1033, `hebb` 553, `calcium` 534, `bcm` 548), 410 to 439 at 0.064, 738 at
+    0.256; at the moderate condition 495 (`lr_ap` 0.128) to 547 (`lr_ap` 0.064) versus the control's 1241 in
+    7 of 10 (`calcium` 328). Mechanism: each activation subtracts a constant from the synapse and L1
+    renormalization hands the weight to the synapses that fire least, so every neuron ends as a one-hot detector
+    of its input with the largest initial weight-to-frequency ratio (196 distractor, 6 texture, 1 tone detectors;
+    task weight fraction 0.03, `w_bas` fixed once one-hot). It is entirely apical-blind: under inhibition
+    performance sits at 0.54 and expert comes 325 trials after the lift (397 without inhibition), the same
+    criterion 2 asymmetry as `calcium`, and it stays expert to 4000 trials without divergence.
+  - `thr` with the soft bound (the `hebb` depression alone) reaches 833 to 912 trials in only 3 of 5 seeds: without
+    `hebb`'s strong potentiation on above-threshold neurons the weights decay to `w_sum` 0.03 to 0.2 and the
+    population loses drive (final performance 0.7 to 0.8); the gated rules' potentiation at `lr_bas` up to 0.008
+    is too weak to hold the detectors (`hebb` uses 0.064). `thr` with L1 diverges in every seed, including the
+    pruning-only baseline, because the gained tone and texture responses cross the threshold and are spared while
+    everything else is depressed and renormalized away, so 3 to 4 tone and 12 to 20 texture detectors form and
+    the tone drive explodes. `const` with the soft bound decays every weight to 0 (chance).
+  - Conclusion: the speed-up of every rule that works here (`hebb` with a basal threshold, `calcium`, `bcm`, and
+    now plain constant LTD with L1) is apical-blind sharpening of the basal weights into one-hot detectors, which
+    even a rule with no potentiation at all delivers, and the apically gated potentiation of `us` and `burst` is
+    irrelevant at every rate at which it does not diverge. The one apical-dependent effect seen so far is
+    `hebb`'s 3 to 8 texture detectors, and even they do not beat pruning alone (553 vs 397).
 - Open decision: the shared environment can be 203 neurons at `init_power` 12 (100 neurons also works for calcium but
-  not for any gated rule). Calcium and `hebb` with `theta_bas_0` 16 are the two rules that beat the control by a wide
-  margin (calcium 328 to 534 trials, `hebb` 553 to 722, control 1033 to 1235); only `hebb` passes both inhibition
-  criteria without post-lift collapse. `us` gives a modest, clean improvement; `gated_hebb` and `burst` are
+  not for any gated rule). Calcium, `hebb` with `theta_bas_0` 16 and constant LTD with L1 (`rule` none, `lr_dep`
+  0.016 `const`) are the settings that beat the control by a wide margin (pruning 392 to 547 trials, calcium 328
+  to 534, `hebb` 553 to 722, control 1033 to 1235); only `hebb` passes both inhibition criteria without post-lift
+  collapse. `us` gives a modest, clean improvement; `gated_hebb` and `burst` are
   indistinguishable from tuning the learning rates. Still open: accept apical-blind sharpening or pruning, or add
   a population-level competition so that a gated rule can concentrate potentiation on few neurons.
 - Todo list (agreed with the user on 2026-09-25, in this order): (1) diagnose `gated_hebb` as deeply as `us` /

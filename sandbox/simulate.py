@@ -23,6 +23,11 @@ DEFAULT_HP = dict(
     lr_trace=LR,              # learning rate of the apical afferent trace x_pre_t (main code: LR)
     theta_0=THETA_0,          # scale of the per-neuron plasticity thresholds (as in the mixed model)
     theta_bas_0=None,         # threshold scale seen by the basal rule only (None: same thresholds as the apical rule)
+    lr_dep=0.,                # rate of an extra subtractive depression term added to any rule's update (0: off):
+                              # - lr_dep * x_in * relu(theta_bas - x_som) ('thr', the depression half of hebb, i.e.
+                              # every synapse active on a neuron below its basal threshold is depressed by the gap)
+                              # or - lr_dep * x_in ('const', every active synapse by a constant)
+    dep_form='thr',           # form of the extra depression term, 'thr' or 'const'
     theta_gate=None,          # per-neuron plasticity gate on the basal rule's update: None (off), 'pot' (potentiation
                               # only on neurons with x_som > basal threshold, depression untouched) or 'all' (no
                               # basal plasticity at all on neurons below the basal threshold)
@@ -185,6 +190,10 @@ def simulate_seed_bu(hp: dict = None, seed: int = 0) -> dict:
             dw_weights += learning_rate * dv_hat_now * z_h[j, :] * K_V
             w_ap = torch.clamp(w_ap + lr_ap * x_pre_t[t] * (x_som - thetas) * (1 - w_ap) * w_ap, min=0, max=1)
             dw = rule(w_bas, x_in, x_som, x_bas, x_ap, gains, thetas_bas, hp, state)  # SANDBOX
+            if hp.get('lr_dep', 0.) > 0:  # SANDBOX: extra subtractive depression term
+                post_dep = torch.relu(thetas_bas - x_som) if hp['dep_form'] == 'thr' else torch.ones(n_z)
+                dep = -float(hp['lr_dep']) * torch.outer(x_in, post_dep)
+                dw = dep if dw is None else dw + dep
             if dw is not None and hp.get('theta_gate') is not None:  # SANDBOX: per-neuron gate on the basal update
                 above = (x_som > thetas_bas).float()
                 dw = dw * above if hp['theta_gate'] == 'all' else torch.where(dw > 0, dw * above, dw)
