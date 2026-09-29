@@ -36,8 +36,12 @@ DEFAULT_HP = dict(
                               # basal plasticity at all on neurons below the basal threshold)
     n_noise=N_Z_BU_PLASTICITY,  # number of distractor stimuli
     n_z=N_Z,                  # number of pyramidal neurons
-    init='random',            # 'random' (L1-normalized rand**init_power, as in the mixed model) or 'identity'
+    init='random',            # 'random' (L1-normalized rand**init_power, as in the mixed model), 'identity',
+                              # 'lognormal' (L1-normalized exp(init_sigma * N(0, 1))) or 'dirichlet' (each neuron's
+                              # afferents drawn from a symmetric Dirichlet with concentration init_alpha)
     init_power=6,             # exponent applied to the uniform draws before normalization (sparsity of the init)
+    init_sigma=1.0,           # lognormal init: log-standard deviation (larger = sparser)
+    init_alpha=0.1,           # dirichlet init: concentration (smaller = sparser; 1 = uniform on the simplex)
     n_trials=N_TRIALS,
     n_trials_inhibited=0,     # apical dendrites silenced for the first this many trials (main code: N_TRIALS of N_TRIALS_AP_INH)
     snapshot_every=50,        # store w_bas every this many trials (plus the final one)
@@ -68,6 +72,14 @@ def get_params_bu(hp: dict):
     random_shuffle(noise_probs)
     if hp['init'] == 'random':
         w_bas = torch.nn.functional.normalize(torch.rand((n_stim, n_z)) ** hp['init_power'], p=1., dim=0)
+        probs = torch.tensor([1, 0.5, 0.5] + noise_probs) / N_TIME_STEPS
+        thetas = hp['theta_0'] * torch.matmul(probs[:], w_bas) + BKG
+    elif hp['init'] in ('lognormal', 'dirichlet'):
+        if hp['init'] == 'lognormal':
+            w_bas = torch.exp(float(hp['init_sigma']) * torch.randn((n_stim, n_z)))
+        else:
+            w_bas = torch.distributions.Gamma(float(hp['init_alpha']) * torch.ones((n_stim, n_z)), torch.ones((n_stim, n_z))).sample()
+        w_bas = torch.nn.functional.normalize(w_bas, p=1., dim=0)
         probs = torch.tensor([1, 0.5, 0.5] + noise_probs) / N_TIME_STEPS
         thetas = hp['theta_0'] * torch.matmul(probs[:], w_bas) + BKG
     elif hp['init'] == 'identity':

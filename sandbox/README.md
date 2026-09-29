@@ -14,6 +14,7 @@ the `l5apical` package. Delete this directory when done; nothing outside it depe
 | `sweep.py` | CLI: run a single config or a cartesian grid, parallel over (config, seed), writes pickles + `summary.csv` |
 | `plot.py` | CLI: one overview figure per config plus a cross-config comparison |
 | `sign_maps.py` | CLI: instantaneous update of every rule over the (apical gain, basal weight) plane |
+| `best.py` | print the best configurations of a sweep per rule and init power (`python -m sandbox.best <name> [n]`) |
 | `show.py`, `tab.py` | print sweep summaries (`show` the full table, `tab` a compact ranked one with one column per varied hyperparameter) |
 | `compare.py` | overlay performance and detector counts of several configurations in one figure |
 | `diag.py` | one-seed diagnostic of the apical loop (TD error, `x_pre_t`, apical weights, gains, texture weights) |
@@ -71,8 +72,10 @@ column `diverged` counts such seeds.
   `all` switches the basal plasticity of sub-threshold neurons off entirely. Used to test whether a rule with an
   explicit apical factor (`us`, `burst`) works once its potentiation is restricted to strongly driven neurons, as in `hebb` with
   `theta_bas_0`.
-- `n_noise`, `n_z`, `init`, `init_power`, `theta_0`: distractor count, neuron count, `random` (L1-normalized
-  `rand ** init_power`, as in the mixed model) or `identity` initialization, and the threshold scale. Larger
+- `n_noise`, `n_z`, `init`, `init_power`, `init_sigma`, `init_alpha`, `theta_0`: distractor count, neuron count,
+  initialization (`random` = L1-normalized `rand ** init_power` as in the mixed model, `identity`, `lognormal` =
+  L1-normalized `exp(init_sigma * N(0, 1))`, `dirichlet` = each neuron's afferents from a symmetric Dirichlet with
+  concentration `init_alpha`), and the threshold scale. Larger
   `init_power` gives sparser initial weights; the median strongest weight of a neuron is about 0.19 at power 6, 0.28
   at 12 and 0.4 at 24 (with 33 stimuli).
 - `n_trials`, `n_trials_inhibited`: apical dendrites are silenced for the first `n_trials_inhibited` trials exactly

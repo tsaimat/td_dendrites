@@ -374,6 +374,39 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     hundreds of distractor detectors swamp the policy readout), and `n_z` 400 or 800 at power 192 with 100
     distractors diverges. `n_z` was not freed by the user; it is the lever if 100 or more distractors with every
     seed learning is wanted.
+- Step 1 closed by the user (2026-09-29): `n_z` stays 203, the regime is about 30 distractors around `init_power`
+  12, better-motivated init families may be proposed, and all control rates must be tuned. Fully tuned control
+  (sweeps `c30_rates`, `c30_rates3`, `c30_place`, `s2_ctrl`, `s2_ctrl_inh`): `lr_policy` 0.256, `lr_td` 0.048
+  (0.056 is 5 percent faster but at the divergence edge, 0.064 diverges), `lr_trace` 0.256 (0.016 is 25 percent
+  slower; 0.512 to 1.0 no better), `lr_ap` 0.064 (0.128 equal). At these rates the control at 30 distractors learns
+  in 597 trials at power 12 (10 of 10; 808 after the lift, 5 of 5) and 814 at power 10 (10 of 10; 1172 after the
+  lift), so power 10 is the closer match to the 1000-trial target and both powers are carried. Power 8 loses 4 of
+  10 seeds; 40 distractors fail at every power. Alternative inits (sandbox `init` = `lognormal` with `init_sigma`,
+  `dirichlet` with `init_alpha`; `sweep c30_init`): lognormal sigma 2 has the same sparsity as power 12 (median
+  strongest weight 0.32, about 13 texture-dominant neurons) but its heavier tail gives a few very strong neurons,
+  so at tuned rates it diverges in 1 to 4 of 10 seeds (sigma 2 to 2.5); Dirichlet 0.05 learns in 474 (5 of 5) at
+  the slower rates. Kept as options, the power init stays the working one.
+- Step 2 at the tuned control rates (policy 0.256, TD 0.048, trace 0.256 fixed; `lr_ap`, `lr_bas` and the rule
+  constants free; sweeps `s2_rules`, `s2_refine`, `s2_casilent`, `s2_fin10`, `s2_fin_inh`, `s2_hebb2`; 10 seeds
+  without inhibition, 5 in the inhibition protocol; `sandbox/best.py` prints per-rule bests):
+  - `calcium` (L1, `lr_bas` 0.001, `ca_ltd_frac` 0.5, `ca_theta_p` 1.5, `ca_gamma_d` 1.0, `ca_beta` 2, `lr_ap`
+    0.128): power 12: 497 (10 of 10), 486 after the lift (5 of 5) versus the control's 597 and 808, i.e. the
+    no-inhibition and post-lift times are now the same; power 10: 666 (10 of 10), 573 after the lift (`ca_gamma_d`
+    0.5: 691 and 469) versus 814 and 1172. `lr_bas` 0.002 or more loses seeds to divergence at this TD rate. A
+    narrow LTD window (`ca_ltd_frac` 0.8 to 1.0, `sweep s2_casilent`), which makes the rule nearly silent without
+    gain, learns at the control's speed (603 at power 12, 891 at power 10) with about 10 distractor detectors, so
+    the speed-up of calcium comes with the sharpening at gain 1.
+  - `bcm` (soft, `bcm_e0_scale` 0.5): power 12 `lr_bas` 0.032, `bcm_tau` 70, `lr_ap` 0.064: 386 (10 of 10),
+    inhibition 4 of 5 at 373 after the lift; power 10 `lr_bas` 0.064, `bcm_tau` 50: 429 (10 of 10) but under
+    inhibition 3 of 5 seeds collapse after the lift (final performance 0.71). Faster `lr_bas` (0.096) diverges in
+    3 of 10.
+  - `hebb` (soft, `theta_0` 1): power 12 `lr_bas` 0.128, `theta_bas_0` 16, `lr_ap` 0.128: 340 but only 7 of 10
+    (3 diverge), while the inhibition protocol passes 5 of 5 with 321 after the lift; `theta_bas_0` 18 with
+    `lr_bas` 0.256: 425 (9 of 10), inhibition 4 of 5 at 378. Power 10: `theta_bas_0` 14 diverges in 4 of 10 (468
+    after the lift, 5 of 5), 16 loses 2 of 10 to over-pruning (704; 772 after the lift). Per-seed check: the seed
+    that diverges is the one whose init has the most texture-dominant neurons (18); it ends with 9 texture
+    detectors and half the pruning of the other seeds (`w_sum` 0.51 vs 0.2), so the texture-time drive grows until
+    the value estimator diverges. The bound (`l1`) and a lower `lr_ap` (0.032) do not remove it.
 - Open decision: the shared environment can be 203 neurons at `init_power` 12 (100 neurons also works for calcium but
   not for any gated rule). Calcium, `hebb` with `theta_bas_0` 16 and constant LTD with L1 (`rule` none, `lr_dep`
   0.016 `const`) are the settings that beat the control by a wide margin (pruning 392 to 547 trials, calcium 328
