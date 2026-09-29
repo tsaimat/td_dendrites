@@ -264,5 +264,5 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
   `hebb` with `theta_bas_0` 16 at either condition), port it into `helper.py` / `simulate_seed()`, regenerate
   `results_bup.pickle` and the Matlab performance traces, and design the panels. The `theta_bas_0` knob, the three
   `diag_gated*` / `diag_gh` scripts, the `theta_bas_0` and `oja_decay` columns in `sandbox/tab.py`, the README rows
-  and these notes were added on 2026-09-25 to 29 and are uncommitted as of 2026-09-29. Delete pickles of new
+  and these notes were added on 2026-09-25 to 29 and committed as ae1371b on 2026-09-29 (not pushed). Delete pickles of new
   exploratory sweeps once `summary.csv` exists (the disk was at 97 percent, 79 after this cleanup).
