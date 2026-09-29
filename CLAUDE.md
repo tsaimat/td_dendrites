@@ -436,6 +436,33 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     0.032 (1084 / 1390) versus `hebb` (417 / 534); or control at TD 0.048 (814 / 1172) versus `calcium` (666 /
     573). Next: pick, port the chosen rule and constants into `helper.py` / `simulate_seed()`, regenerate
     `results_bup.pickle` and the Matlab traces, and design the panels.
+- Base condition revisited (user, 2026-09-29): the control itself must learn equally fast without inhibition and
+  after the lift; the user's reading is that the policy gets corrupted during the 1800 inhibited trials and the
+  remedy is a lower policy rate compensated by higher other rates. Sweeps `c30_pol`, `c30_pol_inh`, `c30_pol2`,
+  `c30_pol2_inh`, `c30_reset`, `c30_reset256`, `c30_rng`, `c30_fresh`, `c30_cand`, `c30_cand2500`, `c30_cand_inh`
+  (summaries only; `sandbox/pair.py` pairs a sweep with its inhibition twin; `reset_at_lift` ablation knob):
+  - What changes during inhibition (one seed, policy 0.032): nothing but the policy. The TD-error trace `x_pre_t`
+    is exactly 0 (the outcome-step update of the value estimator is multiplied by `x_som - BKG` = 0 and the
+    estimator's weights stay 0), so the apical weights do not move at all; the policy weights drift to a norm of
+    0.23 (they reach 0.78 when expert) because the policy update still runs at 1/10 strength with `x_som` = `BKG`.
+  - The drift is real but small: at policy rate 0.256 (TD 0.048, apical 0.064, trace 0.256, power 12) the
+    post-lift expert trial is 808 without reset, 766 with the policy reset at the lift (5 seeds), and resetting the
+    apical or TD weights as well changes nothing more. With the random generators also reset (`all_rng`, 20
+    seeds) the post-lift run reproduces the fresh run exactly (701 = 701), and with only the state reset it is 757:
+    an 8 percent difference that is pure sampling noise of the 20-seed median (the post-lift slice is a different
+    random realization). So of the 35 percent gap at policy 0.256 about 7 points are the policy drift and the
+    rest is sampling scatter and the slow tail of the proxy; the user's remedy removes the drift part.
+  - Paired results (20 seeds; no-inhibition horizon 2500 trials; `lost` = runs of 40 not reaching expert or
+    diverging): power 12, policy 0.016, TD 0.056, apical 0.064: 1138 / 1140 (ratio 1.00, lost 2); policy 0.016,
+    TD 0.064, apical 0.064: 1102 / 1096 (1.00, lost 4); policy 0.016, TD 0.064, apical 0.128: 1160 / 1172 (1.01,
+    lost 3); policy 0.032, TD 0.064, apical 0.128: 909 / 936 (1.03, lost 2); policy 0.032, TD 0.056, apical
+    0.064: 893 / 951 (1.07, lost 1); power 10, policy 0.032, TD 0.064, apical 0.064: 1142 / 1262 (1.11, lost 4).
+    Policy 0.008 is too slow (1350 to 1600) and loses seeds; `lr_trace` 1.0 helps nothing; apical 0.256 at power
+    10 diverges. Performance during inhibition is 0.50 everywhere. A 1800-trial horizon under-counts a control
+    at about 1100 trials (slow seeds are marked not reached), so use 2500 trials for such controls.
+  - Recommended base condition: 30 distractors, power 12, policy 0.016, TD 0.056, apical 0.064, trace 0.256
+    (1138 without inhibition, 1140 after the lift), or policy 0.032, TD 0.064, apical 0.128 (909 / 936) if 900
+    trials is close enough to the target. Rule tuning (step 2) has to be redone at the chosen condition.
 - Open decision: the shared environment can be 203 neurons at `init_power` 12 (100 neurons also works for calcium but
   not for any gated rule). Calcium, `hebb` with `theta_bas_0` 16 and constant LTD with L1 (`rule` none, `lr_dep`
   0.016 `const`) are the settings that beat the control by a wide margin (pruning 392 to 547 trials, calcium 328

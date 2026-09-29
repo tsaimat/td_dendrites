@@ -43,6 +43,9 @@ DEFAULT_HP = dict(
     init_sigma=1.0,           # lognormal init: log-standard deviation (larger = sparser)
     init_alpha=0.1,           # dirichlet init: concentration (smaller = sparser; 1 = uniform on the simplex)
     n_trials=N_TRIALS,
+    reset_at_lift=None,       # causal ablation only: at the lift of apical inhibition reset 'policy' (the agent's
+                              # policy weights), 'w_ap' (apical weights), 'td' (value-estimator weights), or
+                              # 'all' to their initial values; None (default) = main code
     n_trials_inhibited=0,     # apical dendrites silenced for the first this many trials (main code: N_TRIALS of N_TRIALS_AP_INH)
     snapshot_every=50,        # store w_bas every this many trials (plus the final one)
     store_full=False,         # keep every per-trial array of the main code (large); False drops the ones no sandbox
@@ -142,6 +145,7 @@ def simulate_seed_bu(hp: dict = None, seed: int = 0) -> dict:
 
     # Initialize agent and state value estimator
     actor = Agent(nr_inputs=n_z, policy_lr=plr)
+    w_ap_init = w_ap.clone()  # SANDBOX: for the reset_at_lift ablation
     x_pre_t = torch.zeros(outcome_t)
     dw_weights = torch.zeros(n_z)
 
@@ -164,6 +168,17 @@ def simulate_seed_bu(hp: dict = None, seed: int = 0) -> dict:
         # Lift apical inhibition (in case it was present)
         if j == n_inhibited and n_inhibited > 0:  # SANDBOX
             apical_active = True
+            r_ = hp.get('reset_at_lift')  # SANDBOX: causal ablation
+            if r_ in ('policy', 'all'):
+                actor.policy_weights = torch.zeros(n_z)
+            if r_ in ('w_ap', 'all'):
+                w_ap = w_ap_init.clone()
+            if r_ in ('td', 'all'):
+                dw_weights = torch.zeros(n_z)
+            if r_ == 'all_rng':  # everything plus the random number generators: the post-lift run must then equal a fresh run
+                actor.policy_weights = torch.zeros(n_z); w_ap = w_ap_init.clone(); dw_weights = torch.zeros(n_z)
+                rd_seed(seed); np.random.seed(seed=seed); torch.manual_seed(seed=seed)
+                get_params_bu(hp)  # consume the generators exactly as the fresh run did before its first trial
 
         # SANDBOX: a diverging rule makes the lick probability NaN; stop and return what was recorded so far
         if not (torch.isfinite(w_bas).all() and torch.isfinite(dw_weights).all() and torch.isfinite(x_pre_t).all()

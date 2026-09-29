@@ -15,6 +15,7 @@ the `l5apical` package. Delete this directory when done; nothing outside it depe
 | `plot.py` | CLI: one overview figure per config plus a cross-config comparison |
 | `sign_maps.py` | CLI: instantaneous update of every rule over the (apical gain, basal weight) plane |
 | `best.py` | print the best configurations of a sweep per rule and init power (`python -m sandbox.best <name> [n]`) |
+| `pair.py` | join a sweep with its inhibition twin and print expert, expert after the lift and their ratio per configuration |
 | `show.py`, `tab.py` | print sweep summaries (`show` the full table, `tab` a compact ranked one with one column per varied hyperparameter) |
 | `compare.py` | overlay performance and detector counts of several configurations in one figure |
 | `diag.py` | one-seed diagnostic of the apical loop (TD error, `x_pre_t`, apical weights, gains, texture weights) |
@@ -78,6 +79,9 @@ column `diverged` counts such seeds.
   concentration `init_alpha`), and the threshold scale. Larger
   `init_power` gives sparser initial weights; the median strongest weight of a neuron is about 0.19 at power 6, 0.28
   at 12 and 0.4 at 24 (with 33 stimuli).
+- `reset_at_lift`: causal ablation only (default `None`): at the lift of apical inhibition reset the policy weights
+  (`policy`), the apical weights (`w_ap`), the value-estimator weights (`td`), all three (`all`), or all three plus
+  the random number generators, re-consumed as at the start (`all_rng`, so the post-lift run equals a fresh run).
 - `n_trials`, `n_trials_inhibited`: apical dendrites are silenced for the first `n_trials_inhibited` trials exactly
   as in `Simulation.APICAL_INHIBITION` (main code: 1800 of 4000).
 - rule-specific keys, documented in `rules.py`: `gate_power`, `gh_post`, `gh_theta_scale`, `burst_tau`, `burst_kappa`, `bcm_tau`, `bcm_e0_scale`, `us_tau`, `ca_beta`,
