@@ -23,6 +23,9 @@ DEFAULT_HP = dict(
     lr_trace=LR,              # learning rate of the apical afferent trace x_pre_t (main code: LR)
     theta_0=THETA_0,          # scale of the per-neuron plasticity thresholds (as in the mixed model)
     theta_bas_0=None,         # threshold scale seen by the basal rule only (None: same thresholds as the apical rule)
+    theta_gate=None,          # per-neuron plasticity gate on the basal rule's update: None (off), 'pot' (potentiation
+                              # only on neurons with x_som > basal threshold, depression untouched) or 'all' (no
+                              # basal plasticity at all on neurons below the basal threshold)
     n_noise=N_Z_BU_PLASTICITY,  # number of distractor stimuli
     n_z=N_Z,                  # number of pyramidal neurons
     init='random',            # 'random' (L1-normalized rand**init_power, as in the mixed model) or 'identity'
@@ -181,7 +184,11 @@ def simulate_seed_bu(hp: dict = None, seed: int = 0) -> dict:
             # Update state value estimator, sensory dendrite afferent and sensory dendrite synaptic weight
             dw_weights += learning_rate * dv_hat_now * z_h[j, :] * K_V
             w_ap = torch.clamp(w_ap + lr_ap * x_pre_t[t] * (x_som - thetas) * (1 - w_ap) * w_ap, min=0, max=1)
-            w_bas = apply_bound(w_bas, rule(w_bas, x_in, x_som, x_bas, x_ap, gains, thetas_bas, hp, state), hp)  # SANDBOX
+            dw = rule(w_bas, x_in, x_som, x_bas, x_ap, gains, thetas_bas, hp, state)  # SANDBOX
+            if dw is not None and hp.get('theta_gate') is not None:  # SANDBOX: per-neuron gate on the basal update
+                above = (x_som > thetas_bas).float()
+                dw = dw * above if hp['theta_gate'] == 'all' else torch.where(dw > 0, dw * above, dw)
+            w_bas = apply_bound(w_bas, dw, hp)  # SANDBOX
             x_pre_t[t] += tlr * (abs(dv_hat_now.item()) - x_pre_t[t])
 
             # Store variables of interest

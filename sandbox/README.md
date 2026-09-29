@@ -19,6 +19,8 @@ the `l5apical` package. Delete this directory when done; nothing outside it depe
 | `diag.py` | one-seed diagnostic of the apical loop (TD error, `x_pre_t`, apical weights, gains, texture weights) |
 | `diag_gated.py` | one-seed diagnostic of `us` / `burst`: post-synaptic factor at texture time by texture, update mass per stimulus class, weight trajectories of the most texture-selective neurons |
 | `diag_gh.py` | one-seed diagnostic of `gated_hebb`: post-synaptic factor `gate * (post - theta)` at tone and texture time (fraction of neurons potentiated, T1 vs T2), potentiation and depression mass per stimulus class, weight trajectories and detector counts |
+| `diag_compare.py` | one-seed diagnostic with the same measures for every rule: where potentiation and depression go (row class x step type), across-neuron concentration of potentiation, sign of the post-synaptic factor vs the neuron's own drive, share of potentiation on the strongest synapse, detectors over time |
+| `diag_tone_ablation.py` | causal ablation: `us` / `burst` at diverging basal rates with the tone row's basal update zeroed, 5 seeds each |
 | `diag_gated_ablation.py` | `us` / `burst` with the running average optionally ignoring the outcome step (causal test only); per-block gain, baseline and sign statistics |
 | `check_reproduces.py` | asserts the mirror is bit-identical to the main code for `DEFAULT`, `APICAL_INHIBITION` and `BU_PLASTICITY` |
 
@@ -57,6 +59,11 @@ column `diverged` counts such seeds.
   apical thresholds; a value builds separate basal thresholds `theta_bas_0 * expected drive + BKG`, leaving the apical
   rule's `theta_0` untouched). At `init_power` 12 a value of 16 puts the threshold at about 1.5 times the median
   neuron's strongest un-gained response.
+- `theta_gate`: per-neuron gate applied to any rule's update after the rule is evaluated (`None`, the default, is
+  off): `pot` lets a neuron potentiate only while `x_som` exceeds its basal threshold (depression is untouched),
+  `all` switches the basal plasticity of sub-threshold neurons off entirely. Used to test whether an apically gated
+  rule (`us`, `burst`) works once its potentiation is restricted to strongly driven neurons, as in `hebb` with
+  `theta_bas_0`.
 - `n_noise`, `n_z`, `init`, `init_power`, `theta_0`: distractor count, neuron count, `random` (L1-normalized
   `rand ** init_power`, as in the mixed model) or `identity` initialization, and the threshold scale. Larger
   `init_power` gives sparser initial weights; the median strongest weight of a neuron is about 0.19 at power 6, 0.28

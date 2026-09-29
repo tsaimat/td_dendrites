@@ -245,6 +245,54 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
   theta, the apical loop strengthens) and the value estimator diverges. Texture selectivity is untouched under the
   soft bound (0.92 to 0.93 on the top-20 neurons), so the `BKG` erosion seen for `us` under L1 does not apply.
   `theta_bas_0` was added to the columns of `sandbox/tab.py`.
+- Why `us` and `burst` fail where `hebb` with a basal threshold, `calcium` and `bcm` work (2026-09-29; one-seed
+  diagnostics `sandbox/diag_compare.py`, seeds 0 and 1, fast condition finalists, outputs in
+  `sandbox/results/diag_compare/`; sweep `gate_us_burst`, summary only; ablation `sandbox/diag_tone_ablation.py`):
+  - The working rules are pruners. Depression is 94 to 100 percent of `hebb`'s raw update mass, 56 to 92 percent
+    of `calcium`'s and 95 to 99 percent of `bcm`'s, most of it on distractor synapses at distractor-only steps,
+    and the update sign is a function of the neuron's own drive relative to a fixed per-neuron threshold, applied
+    on every step: only 1 to 10 percent of the neurons potentiate at any step, potentiation is concentrated (80
+    percent of the texture-row potentiation on 6 to 23 neurons), and about half of it lands on the neuron's
+    currently strongest synapse. `hebb` drives the total weight per neuron to about 0.25 and the tone weights to
+    exactly 0 within 300 trials; the apical gain then lifts the texture response of the apically selected neurons
+    over the threshold (potentiation correlates with the apical weight, rho 0.6), so 3 to 8 texture detectors form
+    while everything else is pruned and the population drive stays bounded.
+  - The gated rules are potentiators whose sign is set by the apical state, not by the neuron's own drive:
+    potentiation is 65 to 99 percent of their mass (`us` 0.65 to 0.75, `burst` 0.98, `gated_hebb` 0.99), it only
+    happens at tone and texture steps, on 16 to 37 percent of the neurons (the ones with high apical weight, rho
+    0.7 to 0.99), and at the texture step it is split about equally between the texture row and whatever
+    distractors happen to be co-active (0.45 to 0.52 vs 0.40 to 0.48), because every active synapse of a
+    potentiated neuron gets the same increment. Their depression at distractor-only steps is proportional to the
+    neuron's drive (`us`: Spearman rho between the post-synaptic factor and `x_bas` is minus 0.9), i.e. the most
+    strongly driven neurons lose the most, the opposite of a winner-take-all, and it is too weak to prune (total
+    weight and median strongest weight stay at their initial values). Result: no texture detectors (0 to 1), the
+    same expert trial as the control on the same seed (774 to 784 vs 803), and one third instead of one half of
+    the potentiation on the strongest synapse.
+  - The tone is what diverges. Because the apical gain is the same timing signal at tone and texture time and the
+    tone occurs on every trial, the tone's share of the gated rules' potentiation grows from 0 to 0.3 during
+    learning (as the TD error moves to the tone step) and the tone weight grows on every apically selected neuron
+    (`us` 0.03 to 0.06 at `lr_bas` 0.0005; 7 to 15 tone detectors at 0.004 to 0.008), which raises the population
+    drive at the tone step and blows up the value estimator. Causal test: zeroing the tone row's basal update
+    removes every divergence at `lr_bas` 0.004 (`us` 0 of 5 diverge, 829 trials; `burst` 0 of 5, 931) and for
+    `burst` also at 0.008 (910), but learning is still not faster than the control (1033) because the rules still
+    form only 0 to 4 texture detectors. In `hebb` the tone never crosses the threshold even with gain (tone weights
+    are small on every neuron) and is pruned to 0.
+  - A per-neuron response threshold on the gated rules does not help (sweep `gate_us_burst`; sandbox knob
+    `theta_gate` = `pot` restricts potentiation to neurons with `x_som` above the basal threshold, `all` switches
+    the basal plasticity of sub-threshold neurons off; `theta_bas_0` 8 to 24, `lr_bas` 0.0005 to 0.032, both
+    bounds, 5 seeds): the gate barely binds, because the gated rules already potentiate only where the gain is
+    high and the gained response of those neurons exceeds every tested threshold (with the soft bound the results
+    are identical for all three thresholds). Best setting `us` L1 `lr_bas` 0.002 `theta_bas_0` 24 `pot`: 823 trials
+    in 5 of 5 (ungated 909); everything at `lr_bas` 0.008 or more still diverges or fails, via tone detectors.
+    Todo item (5) is closed with this result.
+  - Summary: what makes a rule work in this model is a post-synaptic factor that is negative for every synapse
+    active on a sub-threshold neuron (constant pruning of distractors and of the tone) and positive only when
+    the neuron's own gained response crosses a per-neuron threshold (winner-take-all across and within neurons,
+    with the apical gain deciding which texture neurons cross). The apically gated rules have neither: their sign
+    is shared across the population and across tone and texture, and their magnitude scales with the drive, so
+    they re-weight the apically selected neurons uniformly, cannot prune, and any rate that moves real weight
+    grows the tone drive until the value estimator diverges. The gated rules would need a subtractive, drive-
+    independent depression term (as in `hebb`) to be viable; that is a rule-design decision for the user.
 - Open decision: the shared environment can be 203 neurons at `init_power` 12 (100 neurons also works for calcium but
   not for any gated rule). Calcium and `hebb` with `theta_bas_0` 16 are the two rules that beat the control by a wide
   margin (calcium 328 to 534 trials, `hebb` 553 to 722, control 1033 to 1235); only `hebb` passes both inhibition
@@ -257,7 +305,8 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
   bottom-up weights from growing too large; (4) sparse weight initialization so selectivity is structurally
   predefined (`init_power` does this; combine with a normalization, since the control at `init_power` 24
   diverges); (5) a basal threshold under which no plasticity occurs, tried for `hebb`, not yet for `us` / `burst`
-  where `BKG` erodes selectivity. Constraints the user set: every mechanism must be biologically plausible (no
+  where `BKG` erodes selectivity (done on 2026-09-29, see the `us` / `burst` bullet: a threshold gate does not
+  bind). Constraints the user set: every mechanism must be biologically plausible (no
   time-step-specific baselines, no excluding the outcome step from a running average; such things are allowed only
   as one-off causal ablations), and every explored parameter must be a sandbox knob with the main-code value as
   default. After that: pick the rule and condition for the main code (candidates: calcium at the moderate condition,

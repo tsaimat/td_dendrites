@@ -3,7 +3,7 @@
 Ranked by (seeds not reaching expert + diverged seeds), then median expert trial. Reads only summary.csv.
 """
 import csv, re, sys
-KEYS = ['rule', 'gh_post', 'gh_theta_scale', 'n_z', 'init_power', 'bound', 'lr_bas', 'lr_ap', 'lr_policy', 'lr_td', 'gate_power', 'theta_0', 'theta_bas_0', 'oja_decay', 'burst_tau', 'burst_kappa', 'us_tau', 'bcm_tau', 'bcm_e0_scale', 'ca_ltd_frac', 'ca_theta_p', 'ca_beta', 'ca_gamma_d']
+KEYS = ['rule', 'gh_post', 'gh_theta_scale', 'n_z', 'init_power', 'bound', 'lr_bas', 'lr_ap', 'lr_policy', 'lr_td', 'gate_power', 'theta_0', 'theta_bas_0', 'theta_gate', 'oja_decay', 'burst_tau', 'burst_kappa', 'us_tau', 'bcm_tau', 'bcm_e0_scale', 'ca_ltd_frac', 'ca_theta_p', 'ca_beta', 'ca_gamma_d']
 for name in sys.argv[1:]:
     rows = list(csv.DictReader(open(f'sandbox/results/{name}/summary.csv')))
     def g(r, k):
