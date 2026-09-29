@@ -338,6 +338,42 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
   and is what keeps `bcm` stable; the rest is sharpening that also happens at gain 1 (which is why these rules keep
   sharpening during apical inhibition). The apical-independent constant LTD (397) is faster than any of them with
   or without the gain, so in this model the sharpening, not the apical modulation of it, sets the learning speed.
+- New goal (user, 2026-09-29): a manuscript figure showing that apical top-down input can support bottom-up
+  plasticity that speeds learning beyond the apical loop alone, with `calcium`, `hebb` (basal threshold) and `bcm`
+  (`us` / `burst` set aside). Two steps: (1) control regimes (no basal plasticity) that learn in about 1000 trials
+  without inhibition and after the lift, with as many distractors as possible (towards 200) and the densest init
+  possible (lowest `init_power`), all learning rates free, as many distinct regimes as can be found; (2) per
+  regime, add the three rules and tune them to cut the time, keeping the no-inhibition and post-lift times similar.
+- Step 1 results (sweeps `env1_screen` to `env7_nz`, summaries only; `n_z` 203, `theta_0` 4, `lr_ap` 0.064,
+  `lr_td` 0.032, `lr_policy` 0.256 unless stated; 10 seeds without inhibition, 5 seeds in the inhibition protocol;
+  `n_noise` and `n_trials` were added to the columns of `sandbox/tab.py`):
+  - Dense inits never learn: at `init_power` 1 to 6 every setting of `n_noise` 30 to 200, `theta_0` 0.25 to 4,
+    `lr_ap` 0.064 to 0.256 and `lr_policy` 0.128 to 0.256 stays at chance for 1800 to 3000 trials. One-seed
+    diagnostics (`sandbox/results/diag_compare/env_*.txt`): with `theta_0` 0.25 the apical loop does start (apical
+    weights 0.1 to 0.5, TD error moves to tone and texture time) but the policy stays at chance, because no neuron
+    carries a texture-specific response that stands out from the common-mode drive; lowering `theta_0` only raises
+    the gain on every neuron alike. Rates never rescue a dense init.
+  - The required sparsity scales with the number of stimuli: the control learns from `init_power` about 0.4 to 1
+    times `n_noise` + 3 upwards (power 8 to 12 at 30 distractors, 32 to 48 at 60, 64 to 128 at 100, 192 at 150),
+    and from there higher powers are faster but at 30 distractors powers 24 to 48 diverge (several tone
+    detectors). `lr_td` 0.032 beats 0.016 everywhere, `lr_policy` 0.256 is 5 to 10 percent faster than 0.128,
+    `lr_ap` 0.032 to 0.128 makes little difference.
+  - Regimes at about 1000 trials (expert proxy, seeds reaching expert; after the lift in the inhibition protocol):
+    30 distractors, power 12: 915 (10 of 10), lift 1143 (5 of 5). 60 distractors, power 32: 1067 (8 of 10), lift
+    1190 (4 of 5); power 48: 655 (9 of 10), lift 633 (4 of 5). 100 distractors, power 96: 969 (9 of 10), lift
+    1001 (4 of 5); power 128: 765 (9 of 10), lift 784 (4 of 5); power 64: 1134 (6 of 10). 150 distractors, power
+    192: 873 (6 of 10), lift 939 (3 of 5). 200 distractors, power 192: 1048 (3 of 10), lift 948 (2 of 5); the
+    identity init (the paper's default model) at these rates: 669 (3 of 3). In every regime the post-lift time
+    matches the no-inhibition time within about 20 percent, and performance during inhibition is 0.51 to 0.53.
+  - The seeds that fail are a texture-coverage lottery, not a rate problem: the random init gives each stimulus
+    about 203 / (`n_noise` + 3) dominant neurons, so from 60 distractors upwards some seeds have no neuron whose
+    strongest input is T1 (or T2). Verified per seed with `get_params_bu`: seed 4 has 0 T1-dominant neurons at
+    (60, 48) and (100, 96) and is the seed that fails at every rate; at 150 to 200 distractors 3 to 5 of 10 seeds
+    lack a neuron for one texture. A larger population fixes this at 100 distractors (`n_z` 400, power 96: 873 in
+    5 of 5; `n_z` 800: 894 in 5 of 5) but not at 200 (`n_z` 400 or 800, power 192: 1 to 2 of 5, because the
+    hundreds of distractor detectors swamp the policy readout), and `n_z` 400 or 800 at power 192 with 100
+    distractors diverges. `n_z` was not freed by the user; it is the lever if 100 or more distractors with every
+    seed learning is wanted.
 - Open decision: the shared environment can be 203 neurons at `init_power` 12 (100 neurons also works for calcium but
   not for any gated rule). Calcium, `hebb` with `theta_bas_0` 16 and constant LTD with L1 (`rule` none, `lr_dep`
   0.016 `const`) are the settings that beat the control by a wide margin (pruning 392 to 547 trials, calcium 328
