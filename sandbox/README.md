@@ -59,15 +59,17 @@ column `diverged` counts such seeds.
   apical thresholds; a value builds separate basal thresholds `theta_bas_0 * expected drive + BKG`, leaving the apical
   rule's `theta_0` untouched). At `init_power` 12 a value of 16 puts the threshold at about 1.5 times the median
   neuron's strongest un-gained response.
+- `rule_sees_gain`: `False` hands the basal rule the un-gained somatic rate and resting apical variables while the
+  network keeps the real gain (causal ablation of the implicit apical route through the soma; default `True`).
 - `lr_dep`, `dep_form`: an extra subtractive depression term added to any rule's update (`lr_dep` 0, the default, is
   off). `thr` is the depression half of `hebb`, `- lr_dep * x_in * relu(theta_bas - x_som)` with the basal threshold
   from `theta_bas_0`, so every synapse active on a sub-threshold neuron is depressed by the gap and neurons above
   threshold are spared; `const` depresses every active synapse by `lr_dep`. With `rule = none` it is a pruning-only
-  baseline. Used to test whether the apically gated rules (`us`, `burst`) work once they can prune like `hebb`.
+  baseline. Used to test whether the rules with an explicit apical factor (`us`, `burst`) work once they can prune like `hebb`.
 - `theta_gate`: per-neuron gate applied to any rule's update after the rule is evaluated (`None`, the default, is
   off): `pot` lets a neuron potentiate only while `x_som` exceeds its basal threshold (depression is untouched),
-  `all` switches the basal plasticity of sub-threshold neurons off entirely. Used to test whether an apically gated
-  rule (`us`, `burst`) works once its potentiation is restricted to strongly driven neurons, as in `hebb` with
+  `all` switches the basal plasticity of sub-threshold neurons off entirely. Used to test whether a rule with an
+  explicit apical factor (`us`, `burst`) works once its potentiation is restricted to strongly driven neurons, as in `hebb` with
   `theta_bas_0`.
 - `n_noise`, `n_z`, `init`, `init_power`, `theta_0`: distractor count, neuron count, `random` (L1-normalized
   `rand ** init_power`, as in the mixed model) or `identity` initialization, and the threshold scale. Larger
@@ -85,12 +87,12 @@ Variables: `x_in` binary stimuli, `x_bas` basal drive, `x_ap` apical activation 
 `gain` in [1, 10], `x_som = gain * x_bas`, `theta` the per-neuron threshold of the mixed model.
 
 - `none`: control.
-- `hebb`: `x_in (x_som - theta)`, the rule in the main code. Apical-blind (theta is far below any driven response).
+- `hebb`: `x_in (x_som - theta)`, the rule in the main code. No explicit apical factor; the apical signal enters through the gain in `x_som` (theta is far below any driven response).
 - `gated_hebb`: `hebb` times the normalized apical activation (three-factor).
 - `burst` (Payeur et al. 2021): `x_in x_som (P - Pbar)` with the burst fraction `P = x_ap` and a running average
   `Pbar`. Off when the apical dendrite is silent.
 - `bcm` (Bienenstock et al. 1982): `x_in x_som (x_som - theta_M)` with a sliding threshold whose fixed point at
-  initialization equals theta. Apical-blind at fixed `x_som`.
+  initialization equals theta. No explicit apical factor; apical influence only through the gain in `x_som`.
 - `us` (Urbanczik & Senn 2014): `x_in x_bas (gain - g_bar)` with `g_bar` a running average of the gain (`us_tau`;
   inf = resting gain 1, then purely potentiating). Off when the apical dendrite is silent.
 - `calcium` (Shouval et al. 2002, Graupner & Brunel 2012): calcium `x_in x_som (1 + ca_beta * apical)` with an LTD

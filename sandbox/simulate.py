@@ -23,6 +23,9 @@ DEFAULT_HP = dict(
     lr_trace=LR,              # learning rate of the apical afferent trace x_pre_t (main code: LR)
     theta_0=THETA_0,          # scale of the per-neuron plasticity thresholds (as in the mixed model)
     theta_bas_0=None,         # threshold scale seen by the basal rule only (None: same thresholds as the apical rule)
+    rule_sees_gain=True,      # False: the basal rule receives x_som and gains computed with gain 1 (the network keeps
+                              # the real gain); a causal ablation that measures how much of a rule's effect enters
+                              # through the apically modulated somatic rate
     lr_dep=0.,                # rate of an extra subtractive depression term added to any rule's update (0: off):
                               # - lr_dep * x_in * relu(theta_bas - x_som) ('thr', the depression half of hebb, i.e.
                               # every synapse active on a neuron below its basal threshold is depressed by the gap)
@@ -189,7 +192,10 @@ def simulate_seed_bu(hp: dict = None, seed: int = 0) -> dict:
             # Update state value estimator, sensory dendrite afferent and sensory dendrite synaptic weight
             dw_weights += learning_rate * dv_hat_now * z_h[j, :] * K_V
             w_ap = torch.clamp(w_ap + lr_ap * x_pre_t[t] * (x_som - thetas) * (1 - w_ap) * w_ap, min=0, max=1)
-            dw = rule(w_bas, x_in, x_som, x_bas, x_ap, gains, thetas_bas, hp, state)  # SANDBOX
+            if hp.get('rule_sees_gain', True):  # SANDBOX
+                dw = rule(w_bas, x_in, x_som, x_bas, x_ap, gains, thetas_bas, hp, state)
+            else:  # SANDBOX: ablation, the rule sees the un-gained rate and resting apical variables
+                dw = rule(w_bas, x_in, x_bas, x_bas, torch.full_like(x_ap, 1. / MAX_GAIN), torch.ones_like(gains), thetas_bas, hp, state)
             if hp.get('lr_dep', 0.) > 0:  # SANDBOX: extra subtractive depression term
                 post_dep = torch.relu(thetas_bas - x_som) if hp['dep_form'] == 'thr' else torch.ones(n_z)
                 dep = -float(hp['lr_dep']) * torch.outer(x_in, post_dep)

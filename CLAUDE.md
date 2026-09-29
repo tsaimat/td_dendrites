@@ -56,9 +56,9 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
 - The rule in the main code (`hebb`, `x_in (x_som - theta)`, soft bound) diverges to NaN in every full-length run at `LR`, also with L1 normalization. Mechanism: the population drive per stimulus grows (soft bound: several synapses per neuron go to 1; L1: many neurons converge on the tone, the most frequent input), and the TD value estimator, tuned for one neuron per stimulus, blows up. This is intrinsic: even the no-plasticity model with a near one-hot random init (`init_power` 24, 14 distractors) diverges in 1 of 5 seeds. Any rule must keep the population drive per stimulus at a few units.
 - With 30 distractors and the mixed-model init (`rand ** 6`, median strongest weight per neuron 0.19) the no-plasticity control never learns in 1800 trials. With `rand ** 12` (strongest weight 0.28) it learns in 1 of 5 seeds (proxy 1621 trials); the paper's 14-distractor mixed model learns in all seeds (1368). The bottom-up sweeps were run at `init_power = 12`.
 - Reference (default model, identity init): expert proxy 1545 trials; under apical inhibition performance stays at 0.50 and expert comes 1549 trials after the lift.
-- `calcium` (LTD/LTP thresholds) with L1 normalization at `lr_bas` 0.002 to 0.004 is the strongest rule: 5 of 5 seeds expert, 780 to 1100 trials, no divergence, robust to its threshold parameters as long as the LTD window is wide (`ca_ltd_frac` 0.3 to 0.5). Mechanism: a within-neuron winner-take-all that turns nearly every neuron into a one-hot detector of its dominant input (about 170 distractor and 10 to 20 texture detectors); the apical term of the calcium proxy (`ca_beta`) makes no difference. `bcm` with the soft bound at 0.064 does the same faster (637 trials) but diverges in 2 of 5 seeds.
-- Because that sharpening is apical-blind, it also runs during apical inhibition: performance stays at chance (criterion 1 holds for every rule tested), but after the lift learning is faster than without inhibition (calcium 789 vs 1107 trials, bcm 477 vs 637), so criterion 2 (same time after the lift) is violated in that direction.
-- The apically gated rules (`burst`, `gated_hebb`, `us`) are silent during inhibition and build texture detectors only once the apical signal exists, so they satisfy both criteria by construction, but they cannot bootstrap learning: at `lr_bas` 0.004 with the soft bound they turn 1 in 5 control seeds into 2 to 3 of 5 (1415 to 1607 trials), the detectors they form are mostly texture detectors (about 10 to 17 vs 8 to 15 distractor), and with a higher rate or the L1 bound the shared apical signal spreads potentiation over the whole population (task fraction rises, no neuron becomes a detector) and the value estimator diverges, in the 4000-trial protocol also late after learning.
+- `calcium` (LTD/LTP thresholds) with L1 normalization at `lr_bas` 0.002 to 0.004 is the strongest rule: 5 of 5 seeds expert, 780 to 1100 trials, no divergence, robust to its threshold parameters as long as the LTD window is wide (`ca_ltd_frac` 0.3 to 0.5). Mechanism: a within-neuron winner-take-all that turns nearly every neuron into a one-hot detector of its dominant input (about 170 distractor and 10 to 20 texture detectors); the explicit apical term of the calcium proxy (`ca_beta`) makes no difference (the gain still enters through `x_som`). `bcm` with the soft bound at 0.064 does the same faster (637 trials) but diverges in 2 of 5 seeds.
+- Because that sharpening does not need the gain (the rule reads `x_som`, but at gain 1 it still sharpens), it also runs during apical inhibition: performance stays at chance (criterion 1 holds for every rule tested), but after the lift learning is faster than without inhibition (calcium 789 vs 1107 trials, bcm 477 vs 637), so criterion 2 (same time after the lift) is violated in that direction.
+- The rules with an explicit apical factor (`burst`, `gated_hebb`, `us`) are silent during inhibition and build texture detectors only once the apical signal exists, so they satisfy both criteria by construction, but they cannot bootstrap learning: at `lr_bas` 0.004 with the soft bound they turn 1 in 5 control seeds into 2 to 3 of 5 (1415 to 1607 trials), the detectors they form are mostly texture detectors (about 10 to 17 vs 8 to 15 distractor), and with a higher rate or the L1 bound the shared apical signal spreads potentiation over the whole population (task fraction rises, no neuron becomes a detector) and the value estimator diverges, in the 4000-trial protocol also late after learning.
 - Constants grids (`hp_burst`, `hp_bcm`, `hp_gated_hebb`, `hp_us`, `hp_inh` in `sandbox/results`): `burst` is insensitive to its averaging time constant (1 to 100 trials all give 2 of 5 seeds at about 1400); its somatic-rate term diverges with the soft bound and only reaches 2 of 5 seeds with L1. `gated_hebb` is insensitive to the gate sharpness. `bcm` depends strongly on the sliding threshold: a fixed or slow (500 trials) threshold always diverges, a fast one (20 trials) with a lowered fixed point (`bcm_e0_scale` 2, lr 0.016) gives 5 of 5 seeds at 1401 trials without divergence, but the total drive per neuron grows 55 percent and under inhibition it sharpens like calcium (1069 after the lift, 1 divergence). `us` with a running-average gain as prediction (`us_tau` 5 trials, L1, lr 0.004) goes from 0 to 4 of 5 seeds but only at 1593 trials, and the detectors it forms are distractor ones. The best calcium setting (`ca_ltd_frac` 0.3, `ca_theta_p` 1.5, lr 0.004, apical term off) reaches 780 to 820 trials in 5 of 5 seeds, and 495 after the lift.
 - Environment sweep (`env_control`, `env_rules`, `env_rules2`, `env_inh`; sandbox knobs `n_z`, `init_power`, `lr_ap`,
   `lr_policy`, main-code constants untouched): the no-plasticity control at `init_power` 6 never learns for any
@@ -154,7 +154,7 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     - `gated_hebb` (soft, `lr_bas` 0.002, `gate_power` 2, `lr_ap` 0.128): 1224 in 9 of 10; inhibition 2 of 5 (3
       divergences). `burst` (soft, `lr_bas` 0.001, `burst_kappa` 0.2, `lr_ap` 0.128): 1217 in 9 of 10; inhibition
       3 of 5 (2 divergences). `lr_bas` 0.004 (gated Hebb) or 0.002 (burst) already diverges without inhibition.
-    - Summary across both conditions: the apical-blind rules (calcium, bcm) cut the learning time by 45 to 75
+    - Summary across both conditions: the rules without an explicit apical factor (calcium, bcm) cut the learning time by 45 to 75
       percent, and at the moderate condition they also survive the inhibition protocol; at the fast condition their
       long-horizon robustness is the limiting factor. The gated rules never beat the control's speed by more than 3
       to 7 percent; their contribution is to rescue seeds the control loses (`us` most reliably), and under
@@ -194,7 +194,7 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
   active synapses potentiate monotonically to 1. Raising only the basal threshold to `theta_bas_0` 16 (1.5 times the
   median neuron's strongest un-gained response, the calcium rule's LTP setting) turns it into a pruning rule: within
   300 trials the total weight per neuron falls from 1 to about 0.25, tone weights go to 0, 40 to 60 of 203 neurons
-  keep any input, 30 distractor detectors form apically blind (the neurons whose strongest input crosses un-gained)
+  keep any input, 30 distractor detectors form without the gain (the neurons whose strongest input crosses un-gained)
   and 3 to 8 texture detectors form through the apical gain. Learning is then faster than the control at tied rates
   in 10 of 10 seeds: fast condition 553 trials (`theta_0` 1) or 642 (`theta_0` 4) vs control 1033; moderate 722 or
   879 vs 1235 (7 of 10). Under apical inhibition it stays at chance (0.505 to 0.52) and reaches expert 597 to 923
@@ -245,7 +245,10 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
   theta, the apical loop strengthens) and the value estimator diverges. Texture selectivity is untouched under the
   soft bound (0.92 to 0.93 on the top-20 neurons), so the `BKG` erosion seen for `us` under L1 does not apply.
   `theta_bas_0` was added to the columns of `sandbox/tab.py`.
-- Why `us` and `burst` fail where `hebb` with a basal threshold, `calcium` and `bcm` work (2026-09-29; one-seed
+- Why `us` and `burst` fail where `hebb` with a basal threshold, `calcium` and `bcm` work (2026-09-29; terminology
+  corrected by the user the same day: these three rules read `x_som = gain * x_bas`, so the apical signal modulates
+  them through the somatic rate; they are not apical-blind, they only lack an explicit apical factor; the constant
+  LTD term below is the one apical-independent rule; one-seed
   diagnostics `sandbox/diag_compare.py`, seeds 0 and 1, fast condition finalists, outputs in
   `sandbox/results/diag_compare/`; sweep `gate_us_burst`, summary only; ablation `sandbox/diag_tone_ablation.py`):
   - The working rules are pruners. Depression is 94 to 100 percent of `hebb`'s raw update mass, 56 to 92 percent
@@ -257,7 +260,8 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     exactly 0 within 300 trials; the apical gain then lifts the texture response of the apically selected neurons
     over the threshold (potentiation correlates with the apical weight, rho 0.6), so 3 to 8 texture detectors form
     while everything else is pruned and the population drive stays bounded.
-  - The gated rules are potentiators whose sign is set by the apical state, not by the neuron's own drive:
+  - The rules with an explicit apical factor are potentiators whose sign is set by the apical deviation, not by the
+    neuron's own gain-modulated drive:
     potentiation is 65 to 99 percent of their mass (`us` 0.65 to 0.75, `burst` 0.98, `gated_hebb` 0.99), it only
     happens at tone and texture steps, on 16 to 37 percent of the neurons (the ones with high apical weight, rho
     0.7 to 0.99), and at the texture step it is split about equally between the texture row and whatever
@@ -288,7 +292,8 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
   - Summary: what makes a rule work in this model is a post-synaptic factor that is negative for every synapse
     active on a sub-threshold neuron (constant pruning of distractors and of the tone) and positive only when
     the neuron's own gained response crosses a per-neuron threshold (winner-take-all across and within neurons,
-    with the apical gain deciding which texture neurons cross). The apically gated rules have neither: their sign
+    with the apical gain, acting through the somatic rate, deciding which texture neurons cross). The rules with an
+    explicit apical factor have neither: their sign
     is shared across the population and across tone and texture, and their magnitude scales with the drive, so
     they re-weight the apically selected neurons uniformly, cannot prune, and any rate that moves real weight
     grows the tone drive until the value estimator diverges. The gated rules would need a subtractive, drive-
@@ -307,7 +312,8 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     7 of 10 (`calcium` 328). Mechanism: each activation subtracts a constant from the synapse and L1
     renormalization hands the weight to the synapses that fire least, so every neuron ends as a one-hot detector
     of its input with the largest initial weight-to-frequency ratio (196 distractor, 6 texture, 1 tone detectors;
-    task weight fraction 0.03, `w_bas` fixed once one-hot). It is entirely apical-blind: under inhibition
+    task weight fraction 0.03, `w_bas` fixed once one-hot). It reads neither `x_som` nor the apical activation, so it is the one genuinely
+    apical-independent rule tested: under inhibition
     performance sits at 0.54 and expert comes 325 trials after the lift (397 without inhibition), the same
     criterion 2 asymmetry as `calcium`, and it stays expert to 4000 trials without divergence.
   - `thr` with the soft bound (the `hebb` depression alone) reaches 833 to 912 trials in only 3 of 5 seeds: without
@@ -318,16 +324,26 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     everything else is depressed and renormalized away, so 3 to 4 tone and 12 to 20 texture detectors form and
     the tone drive explodes. `const` with the soft bound decays every weight to 0 (chance).
   - Conclusion: the speed-up of every rule that works here (`hebb` with a basal threshold, `calcium`, `bcm`, and
-    now plain constant LTD with L1) is apical-blind sharpening of the basal weights into one-hot detectors, which
-    even a rule with no potentiation at all delivers, and the apically gated potentiation of `us` and `burst` is
-    irrelevant at every rate at which it does not diverge. The one apical-dependent effect seen so far is
-    `hebb`'s 3 to 8 texture detectors, and even they do not beat pruning alone (553 vs 397).
+    now plain constant LTD with L1) comes with sharpening of the basal weights into one-hot detectors, which even
+    an apical-independent rule with no potentiation delivers, and the explicit apical potentiation of `us` and
+    `burst` is irrelevant at every rate at which it does not diverge. How much of the `hebb` / `calcium` / `bcm`
+    effect enters through the gain in `x_som` is measured with the `rule_sees_gain` ablation (next bullet).
+- How much of the `hebb` / `calcium` / `bcm` effect enters through the apically modulated somatic rate (2026-09-29,
+  after the user's correction; sandbox knob `rule_sees_gain`, default `True`; `False` hands the rule `x_som`
+  computed at gain 1 and resting apical variables while the network keeps the real gain; sweep `gain_ablation`,
+  fast finalists, 5 seeds, summary only): with the gain `calcium` 548, `bcm` 558, `hebb` 587 trials (control 1033);
+  without it `calcium` 613 (5 of 5), `hebb` 758 (5 of 5), `bcm` 542 but 2 of 5 diverge (its sliding threshold no
+  longer tracks the gained rate, so potentiation runs away into 3 tone and 11 texture detectors). So the implicit
+  apical route carries about 40 percent of `hebb`'s advantage over the control, about 15 percent of `calcium`'s,
+  and is what keeps `bcm` stable; the rest is sharpening that also happens at gain 1 (which is why these rules keep
+  sharpening during apical inhibition). The apical-independent constant LTD (397) is faster than any of them with
+  or without the gain, so in this model the sharpening, not the apical modulation of it, sets the learning speed.
 - Open decision: the shared environment can be 203 neurons at `init_power` 12 (100 neurons also works for calcium but
   not for any gated rule). Calcium, `hebb` with `theta_bas_0` 16 and constant LTD with L1 (`rule` none, `lr_dep`
   0.016 `const`) are the settings that beat the control by a wide margin (pruning 392 to 547 trials, calcium 328
   to 534, `hebb` 553 to 722, control 1033 to 1235); only `hebb` passes both inhibition criteria without post-lift
   collapse. `us` gives a modest, clean improvement; `gated_hebb` and `burst` are
-  indistinguishable from tuning the learning rates. Still open: accept apical-blind sharpening or pruning, or add
+  indistinguishable from tuning the learning rates. Still open: accept sharpening or pruning that also runs at gain 1, or add
   a population-level competition so that a gated rule can concentrate potentiation on few neurons.
 - Todo list (agreed with the user on 2026-09-25, in this order): (1) diagnose `gated_hebb` as deeply as `us` /
   `burst` (done on 2026-09-29, see the `gated_hebb` bullet: a raised basal threshold does not help); (2) explore `oja` (done on

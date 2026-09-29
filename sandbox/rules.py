@@ -127,7 +127,7 @@ def bcm(w_bas, x_in, x_som, x_bas, x_ap, gains, thetas, hp, state):
     """
     dw = lr x_in x_som (x_som - theta_M),   tau dtheta_M/dt = x_som^2 / E0 - theta_M.
 
-    Purely post-synaptic (apical-blind at fixed x_som; the apical gain only enters through x_som). The sliding
+    Purely post-synaptic (no explicit apical factor; the apical gain enters through x_som). The sliding
     threshold is initialized at the fixed threshold theta of the mixed model and E0 is chosen per neuron so that
     its fixed point at initialization (gain 1, initial w_bas) is exactly theta: E0 = E_init[x_som^2] / theta. So at
     the start bcm equals hebb with an extra factor x_som, and as the apical gain raises x_som the threshold slides
@@ -182,7 +182,7 @@ def calcium(w_bas, x_in, x_som, x_bas, x_ap, gains, thetas, hp, state):
     The LTP threshold is set per neuron relative to the strongest basal response the neuron can produce without
     apical input, theta_p = hp['ca_theta_p'] * max_i w_bas_i(init), so with ca_theta_p > 1 LTP needs the apical
     gain (the model's theta is 4x the expected drive per time step, which is far below any driven response because
-    stimuli are sparse in time, so a threshold at theta would make LTP apical-blind). theta_d = hp['ca_ltd_frac'] *
+    stimuli are sparse in time, so a threshold at theta would make LTP independent of the gain). theta_d = hp['ca_ltd_frac'] *
     theta_p: with ca_ltd_frac below the ratio of the un-gained response to theta_p, apical-free activity of the
     dominant synapse falls in the LTD window and is depressed; closer to 1 the rule is silent without apical input.
     The smoothness is s = hp['ca_smooth'] * theta_p, gamma_p = 1 and gamma_d = hp['ca_gamma_d']. Because x_in is
