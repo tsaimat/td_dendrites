@@ -22,6 +22,7 @@ DEFAULT_HP = dict(
     lr_td=LR,                 # learning rate of the TD value estimator (main code: LR)
     lr_trace=LR,              # learning rate of the apical afferent trace x_pre_t (main code: LR)
     theta_0=THETA_0,          # scale of the per-neuron plasticity thresholds (as in the mixed model)
+    theta_bas_0=None,         # threshold scale seen by the basal rule only (None: same thresholds as the apical rule)
     n_noise=N_Z_BU_PLASTICITY,  # number of distractor stimuli
     n_z=N_Z,                  # number of pyramidal neurons
     init='random',            # 'random' (L1-normalized rand**init_power, as in the mixed model) or 'identity'
@@ -94,6 +95,9 @@ def simulate_seed_bu(hp: dict = None, seed: int = 0) -> dict:
     state['_e_x_som_sq_init'] = (torch.matmul(stim_probs, (w_bas + BKG) ** 2)
                                  + torch.clamp(1 - stim_probs.sum(), min=0) * BKG ** 2)
     state['_w_max_init'] = w_bas.max(0).values + BKG  # SANDBOX: strongest un-gained response, used by calcium
+    # SANDBOX: the basal rule may use its own threshold scale; the apical rule always keeps thetas
+    thetas_bas = thetas if hp.get('theta_bas_0') is None else (
+        float(hp['theta_bas_0']) * torch.matmul(stim_probs, w_bas) + BKG).float()
     # SANDBOX: the four learning rates the main code ties to LR are separate hyperparameters here
     tlr, learning_rate = float(hp['lr_trace']), float(hp['lr_td'])
     lr_ap, plr = float(hp['lr_ap']), float(hp['lr_policy'])
@@ -177,7 +181,7 @@ def simulate_seed_bu(hp: dict = None, seed: int = 0) -> dict:
             # Update state value estimator, sensory dendrite afferent and sensory dendrite synaptic weight
             dw_weights += learning_rate * dv_hat_now * z_h[j, :] * K_V
             w_ap = torch.clamp(w_ap + lr_ap * x_pre_t[t] * (x_som - thetas) * (1 - w_ap) * w_ap, min=0, max=1)
-            w_bas = apply_bound(w_bas, rule(w_bas, x_in, x_som, x_bas, x_ap, gains, thetas, hp, state), hp)  # SANDBOX
+            w_bas = apply_bound(w_bas, rule(w_bas, x_in, x_som, x_bas, x_ap, gains, thetas_bas, hp, state), hp)  # SANDBOX
             x_pre_t[t] += tlr * (abs(dv_hat_now.item()) - x_pre_t[t])
 
             # Store variables of interest
@@ -222,7 +226,7 @@ def simulate_seed_bu(hp: dict = None, seed: int = 0) -> dict:
         # SANDBOX: let the rule's slow variables see the outcome-time apical activity (no presynaptic input, so
         # every rule returns dw = 0 here)
         w_bas = apply_bound(w_bas, rule(w_bas, torch.zeros(n_inputs), x_som, x_bas_background,
-                                        x_ap.expand(n_z), gains.expand(n_z), thetas, hp, state), hp)
+                                        x_ap.expand(n_z), gains.expand(n_z), thetas_bas, hp, state), hp)
         dw_weights += learning_rate * (reward - r_pred) * z_h[j, :] * (x_som - BKG)
         actor.update(reward=reward.item(), x_som=x_som)
 

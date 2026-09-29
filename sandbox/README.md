@@ -17,6 +17,9 @@ the `l5apical` package. Delete this directory when done; nothing outside it depe
 | `show.py`, `tab.py` | print sweep summaries (`show` the full table, `tab` a compact ranked one with one column per varied hyperparameter) |
 | `compare.py` | overlay performance and detector counts of several configurations in one figure |
 | `diag.py` | one-seed diagnostic of the apical loop (TD error, `x_pre_t`, apical weights, gains, texture weights) |
+| `diag_gated.py` | one-seed diagnostic of `us` / `burst`: post-synaptic factor at texture time by texture, update mass per stimulus class, weight trajectories of the most texture-selective neurons |
+| `diag_gh.py` | one-seed diagnostic of `gated_hebb`: post-synaptic factor `gate * (post - theta)` at tone and texture time (fraction of neurons potentiated, T1 vs T2), potentiation and depression mass per stimulus class, weight trajectories and detector counts |
+| `diag_gated_ablation.py` | `us` / `burst` with the running average optionally ignoring the outcome step (causal test only); per-block gain, baseline and sign statistics |
 | `check_reproduces.py` | asserts the mirror is bit-identical to the main code for `DEFAULT`, `APICAL_INHIBITION` and `BU_PLASTICITY` |
 
 Run everything in the repository's own conda env `tdd`, built as the top-level README describes
@@ -50,6 +53,10 @@ column `diverged` counts such seeds.
   common `LR` = 0.016).
 - `lr_ap`, `lr_policy`, `lr_td`, `lr_trace`: learning rates of the apical weights, the agent's policy network, the
   TD value estimator and the apical afferent trace `x_pre_t` (main code: all four equal `LR`).
+- `theta_bas_0`: threshold scale seen by the basal rule only (`None`, the default, means the basal rule uses the
+  apical thresholds; a value builds separate basal thresholds `theta_bas_0 * expected drive + BKG`, leaving the apical
+  rule's `theta_0` untouched). At `init_power` 12 a value of 16 puts the threshold at about 1.5 times the median
+  neuron's strongest un-gained response.
 - `n_noise`, `n_z`, `init`, `init_power`, `theta_0`: distractor count, neuron count, `random` (L1-normalized
   `rand ** init_power`, as in the mixed model) or `identity` initialization, and the threshold scale. Larger
   `init_power` gives sparser initial weights; the median strongest weight of a neuron is about 0.19 at power 6, 0.28

@@ -40,7 +40,7 @@ To run one simulation type: `l5apical.simulations.simulate_seeds(Simulation.X)`;
 
 Adding a new simulation variant means: add an enum member in `Simulation`, a path in `get_path()`, parameter handling in `get_params()`, any per-trial branch in `simulate_seed()`, a call in `run()`, an entry in `save_trial_outcomes_matlab()` and `load_smith_perf()`, and a matching filename and `perf_*` variable in `Smith/getperfs.m`.
 
-## Work in progress (as of 2026-09-25)
+## Work in progress (as of 2026-09-29)
 
 The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed and pushed to the fork
 (`tsaimat/td_dendrites`). State of the work:
@@ -168,8 +168,101 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
   still stale. Natural next steps: pick the rule and condition to carry into the main code (calcium at the moderate
   condition is the strongest candidate), port its constants into `helper.py` / `simulate_seed()`, regenerate
   `results_bup.pickle` and the Matlab performance traces, and design the panels.
+- Why `us` and `burst` underperform (one-seed diagnostics `sandbox/diag_gated.py`, `sandbox/diag_gated_ablation.py`,
+  fast finalists): their slow variables `g_bar` / `p_bar` are correct cross-trial moving averages (rule `state` is
+  created once per seed and updated every time step including the outcome step), so a per-trial reset is not the
+  problem. Findings: (1) the post-synaptic factor at texture time is identical on T1 and T2 trials (difference 0.005
+  vs mean 0.9) because the apical input `w_ap * x_pre_t[t]` is a shared timing signal; the only texture-specific
+  factor is `x_bas` itself, so the rules are a multiplicative rich-get-richer on existing selectivity (the user
+  considers this acceptable: the goal is textures vs distractors, not T1 vs T2). (2) `BKG` in `x_bas` boosts the
+  weak texture weight relatively more, so selectivity erodes (top-20 neurons 0.92 to 0.73 for `us` under L1). (3)
+  The outcome-step gain (up to 10 on all neurons) lifts `g_bar` to about 1.4, so for the first 300 trials the factor
+  at texture time is negative on every neuron; but the ablation that ignores the outcome step does not speed
+  learning (991 vs 1030 median, 5 seeds) because the inflated baseline acts as a threshold restricting potentiation
+  to the 16 to 23 percent of neurons with high apical weight, and without it every neuron is potentiated alike. The
+  other rules are immune because no input is active at the outcome step and they have no apical slow variable
+  (`bcm`'s threshold sees `x_som` at most 0.1 there). (4) The tone-time gain equals the texture-time gain (2.27)
+  but the tone occurs on every trial, so under competition the tone wins: with L1 the rules form 0 texture
+  detectors at any rate and 10 tone detectors at `lr_bas` 0.002; 65 percent (`us`) / 51 percent (`burst`) of the
+  update mass lands on distractor synapses. Net: they only re-weight neurons the apical loop already selected, so
+  the speed-up is at most a few percent, and any rate high enough to move more weight raises the population drive
+  and diverges.
+- `hebb` with its own basal threshold (sweeps `hebb_tied`, `hebb_theta`, `hebb_theta2`, `hebb_theta_ctrl`,
+  `hebb_theta10`, `hebb_theta_inh`; sandbox knob `theta_bas_0`, default `None` = apical thresholds): with the
+  apical rule's own hyperparameters (`lr_bas` = `lr_ap`, soft bound, shared `theta_0` 4) the rule diverges in every
+  seed at every rate condition (trial 190 to 700), because `x_som - theta` is positive on every driven step and all
+  active synapses potentiate monotonically to 1. Raising only the basal threshold to `theta_bas_0` 16 (1.5 times the
+  median neuron's strongest un-gained response, the calcium rule's LTP setting) turns it into a pruning rule: within
+  300 trials the total weight per neuron falls from 1 to about 0.25, tone weights go to 0, 40 to 60 of 203 neurons
+  keep any input, 30 distractor detectors form apically blind (the neurons whose strongest input crosses un-gained)
+  and 3 to 8 texture detectors form through the apical gain. Learning is then faster than the control at tied rates
+  in 10 of 10 seeds: fast condition 553 trials (`theta_0` 1) or 642 (`theta_0` 4) vs control 1033; moderate 722 or
+  879 vs 1235 (7 of 10). Under apical inhibition it stays at chance (0.505 to 0.52) and reaches expert 597 to 923
+  trials after the lift, i.e. the same time as without inhibition, so unlike calcium it satisfies both inhibition
+  criteria. The window is narrow: `theta_bas_0` 8 to 10 diverges, 12 is borderline (4 of 5 diverge, the rest learn in
+  about 480), 20 to 24 loses 2 to 5 seeds because too few texture synapses cross even with gain; the window scales
+  with `init_power` through the strongest-response ratio. The apical threshold matters too: `theta_0` 1 beats 4 for
+  the rule and the control at moderate and `LR` rates, `theta_0` 16 stops all learning, and at the fast condition
+  the control with `theta_0` 1 diverges in 5 of 5 seeds while the pruned model is stable. Pickles are kept only for
+  `hebb_theta10` and `hebb_theta_inh`.
+- `oja` (sweeps `oja_f`, `oja_f2` at the fast condition, `oja_m` at the moderate one; `bound` clamp and none are
+  bit-identical because the weights never leave [0, 1]; `oja_decay` 1 to 64, `lr_bas` 0.0001 to 0.008; summaries
+  only, pickles deleted): never better than the control. Textbook decay 1 diverges in every seed, decay 4 in most
+  (at `lr_bas` 0.002 or more), decay 16 or 64 keeps the drive bounded but leaves performance at chance in every
+  seed. Only the settings that barely act stay usable: at `lr_bas` 0.0001, decay 2, 5 of 5 seeds at 1159 trials
+  (fast; control 1033), and at the moderate condition 2 of 5 (control 3 of 5). Mechanism (one-seed weight
+  trajectories): Oja's fixed point is `w_i` proportional to `E[x_i x_som]`, so with sparse binary inputs the weight
+  vector converges to the input-frequency profile (tone 1, distractors up to 0.97, textures 0.5): the weights
+  homogenize (median strongest weight 0.30 to 0.09, texture selectivity 0.88 to 0.04 to 0.4), the tone becomes the
+  strongest input on 50 to 75 percent of neurons, and the L1 drive grows (to 1.4 to 1.9 at decay 4) while the L2
+  norm shrinks toward `1 / sqrt(decay * gain)`. Because the apical gain is a timing signal shared by tone and
+  texture, it cannot bias the competition toward the textures. Why it fails where `hebb` with `theta_bas_0` 16
+  works: `hebb` has an absolute per-neuron threshold, so it depresses every active synapse on every step unless the
+  neuron's response already exceeds the threshold (pruning that shrinks the drive and keeps the initial winners,
+  with the apical gain lifting texture synapses over it); Oja has no threshold, potentiates every active synapse
+  however weak, holds strong ones down with a decay proportional to their own weight, and its single-synapse
+  equilibrium falls with the gain, so it erases the initial selectivity instead of amplifying it. Todo item (2)
+  is closed with this result; `oja_decay` was added to the columns of `sandbox/tab.py`.
+- `gated_hebb` diagnosed (todo item 1; sweeps `gh_tb`, `gh_tb2` at the fast condition, summaries only; one-seed
+  diagnostics `sandbox/diag_gh.py`, output in `sandbox/results/diag_gh_lr*.txt`): a raised basal threshold does not
+  rescue it. With `gh_post` som (the gained `x_som` compared with the threshold, as in `hebb`) every setting of
+  `theta_bas_0` 8 to 64, `lr_bas` 0.002 to 0.256 and `theta_0` 1 or 4 diverges in 5 of 5 seeds (a few seeds survive
+  only at `theta_bas_0` 64), with 12 to 35 texture detectors, up to 164 distractor detectors and `w_sum` up to 3.2;
+  unlike `hebb` it never prunes, because depression can only occur while the gate is open (tone and texture time),
+  so the distractor synapses active at all other steps are never touched, and at the gated steps the gain (up to
+  10) pushes many neurons above any threshold. With `gh_post` bas (un-gained drive compared with the threshold)
+  nothing diverges, but the rule is then pure depression: no texture detectors form, the task weight fraction falls
+  from 0.094 to 0.065 to 0.075, and learning is the control's (1035 vs 1033 trials at `theta_bas_0` 16; worse at
+  32 and 64, where 1 to 5 seeds fail). Diagnostics at the fast finalist (`lr_bas` 0.0005, soft, seed 0, expert 784)
+  and at `lr_bas` 0.004 (diverges at trial 792): (1) the rule is almost purely potentiating (depression is about 1
+  percent of the update mass); (2) the factor at texture time is positive on about 20 percent of the neurons from
+  the start (those whose gained response already exceeds theta) and its T1 minus T2 difference per neuron is 0.02
+  against a mean of 0.3, so as for `us` / `burst` it only re-weights neurons the apical loop selected; (3) 48 to 61
+  percent of the potentiation lands on distractor synapses that happen to be active at the gated steps, 36 to 40 on
+  textures, 3 to 11 on the tone (small tone weights grow slowly under the soft bound), so distractor detectors form
+  alongside texture detectors (12 and 15 at `lr_bas` 0.004); (4) at `lr_bas` 0.004 the fraction of neurons with a
+  positive factor rises from 20 to 45 percent by trials 600 to 900 (potentiation raises `x_som`, more neurons cross
+  theta, the apical loop strengthens) and the value estimator diverges. Texture selectivity is untouched under the
+  soft bound (0.92 to 0.93 on the top-20 neurons), so the `BKG` erosion seen for `us` under L1 does not apply.
+  `theta_bas_0` was added to the columns of `sandbox/tab.py`.
 - Open decision: the shared environment can be 203 neurons at `init_power` 12 (100 neurons also works for calcium but
-  not for any gated rule). Calcium is the only rule that creates selectivity and beats the control by a wide margin;
-  `us` gives a modest, clean improvement; `gated_hebb` and `burst` are indistinguishable from tuning the learning
-  rates. Still open: accept apical-blind sharpening (calcium, faster post-lift learning), or add a population-level
-  competition so that a gated rule can concentrate potentiation on few neurons.
+  not for any gated rule). Calcium and `hebb` with `theta_bas_0` 16 are the two rules that beat the control by a wide
+  margin (calcium 328 to 534 trials, `hebb` 553 to 722, control 1033 to 1235); only `hebb` passes both inhibition
+  criteria without post-lift collapse. `us` gives a modest, clean improvement; `gated_hebb` and `burst` are
+  indistinguishable from tuning the learning rates. Still open: accept apical-blind sharpening or pruning, or add
+  a population-level competition so that a gated rule can concentrate potentiation on few neurons.
+- Todo list (agreed with the user on 2026-09-25, in this order): (1) diagnose `gated_hebb` as deeply as `us` /
+  `burst` (done on 2026-09-29, see the `gated_hebb` bullet: a raised basal threshold does not help); (2) explore `oja` (done on
+  2026-09-28, see the `oja` bullet: no usable regime); (3) a normalization step that keeps the
+  bottom-up weights from growing too large; (4) sparse weight initialization so selectivity is structurally
+  predefined (`init_power` does this; combine with a normalization, since the control at `init_power` 24
+  diverges); (5) a basal threshold under which no plasticity occurs, tried for `hebb`, not yet for `us` / `burst`
+  where `BKG` erodes selectivity. Constraints the user set: every mechanism must be biologically plausible (no
+  time-step-specific baselines, no excluding the outcome step from a running average; such things are allowed only
+  as one-off causal ablations), and every explored parameter must be a sandbox knob with the main-code value as
+  default. After that: pick the rule and condition for the main code (candidates: calcium at the moderate condition,
+  `hebb` with `theta_bas_0` 16 at either condition), port it into `helper.py` / `simulate_seed()`, regenerate
+  `results_bup.pickle` and the Matlab performance traces, and design the panels. The `theta_bas_0` knob, the three
+  `diag_gated*` / `diag_gh` scripts, the `theta_bas_0` and `oja_decay` columns in `sandbox/tab.py`, the README rows
+  and these notes were added on 2026-09-25 to 29 and are uncommitted as of 2026-09-29. Delete pickles of new
+  exploratory sweeps once `summary.csv` exists (the disk was at 97 percent, 79 after this cleanup).
