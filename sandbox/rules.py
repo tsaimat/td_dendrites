@@ -21,12 +21,14 @@ the mechanism that keeps the weights bounded are chosen independently:
 
     'soft'   w <- clamp(w + dw * (1 - w) * w, 0, 1)      the soft bound of the main code, weights stay in [0, 1]
     'clamp'  w <- clamp(w + dw, 0, 1)                    hard clamp only; total drive per neuron is unbounded
-    'l1'     w <- normalize(clamp(w + dw, 0), L1, dim=0)  each neuron's afferents keep summing to 1 (competition)
+    'l1'     w <- clamp(rescale cols of clamp(w + dw, 0), 0, 1)  each neuron's afferents keep their initial total
+                                                         (competition); then clamped to [0, 1]
     'none'   w <- w + dw                                 nothing (only sensible for rules with their own decay)
-    'pre'    w <- rescale rows of clamp(w + dw, 0)       each stimulus keeps its initial total outgoing weight (sum
-                                                         over neurons), so a rule can redistribute a stimulus's drive
-                                                         across neurons but never grow it (presynaptic competition)
-    'both'   per-neuron L1 (as 'l1') followed by 'pre'   both constraints, one step of each per update
+    'pre'    w <- clamp(rescale rows of clamp(w + dw, 0), 0, 1)  each stimulus keeps its initial total outgoing
+                                                         weight (sum over neurons), so a rule can redistribute a
+                                                         stimulus's drive across neurons but never grow it
+    'both'   per-neuron rescaling (as 'l1') followed by 'pre', then clamped to [0, 1]
+    Every bound keeps the weights in [0, 1] (the user's hard constraint for bottom-up plasticity).
 
 The rules are called once per time step of the stimulus period and once at the outcome time step (with x_in = 0),
 so slow variables also see the outcome-time apical activity.
@@ -215,15 +217,16 @@ def apply_bound(w_bas: torch.Tensor, dw, hp: dict) -> torch.Tensor:
     if bound == 'clamp':
         return torch.clamp(w_bas + dw, min=0, max=1)
     if bound == 'l1':
-        return torch.nn.functional.normalize(torch.clamp(w_bas + dw, min=0), p=1., dim=0)
+        w = torch.clamp(w_bas + dw, min=0)
+        return torch.clamp(w * (hp['_col_sums'] / torch.clamp(w.sum(0, keepdim=True), min=1e-12)), max=1)
     if bound == 'none':
         return w_bas + dw
     if bound in ('pre', 'both'):
         w = torch.clamp(w_bas + dw, min=0)
         if bound == 'both':
-            w = torch.nn.functional.normalize(w, p=1., dim=0)
+            w = w * (hp['_col_sums'] / torch.clamp(w.sum(0, keepdim=True), min=1e-12))
         row = w.sum(1, keepdim=True)
-        return w * (hp['_row_sums'] / torch.clamp(row, min=1e-12))
+        return torch.clamp(w * (hp['_row_sums'] / torch.clamp(row, min=1e-12)), max=1)
     raise ValueError(f"unknown bound {bound!r}")
 
 
