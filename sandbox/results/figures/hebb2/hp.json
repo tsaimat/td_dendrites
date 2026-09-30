@@ -3,15 +3,16 @@
  "bound": "soft",
  "lr_bas": 0.256,
  "theta_bas_0": 8,
- "theta_0": 4,
- "lr_ap": 0.128,
  "n_z": 1000,
  "n_noise": 30,
  "init": "lognormal",
  "init_sigma": 2,
+ "init_norm": "neuron",
  "init_scale": 1.89,
  "init_clip": 1,
+ "theta_0": 4,
  "lr_policy": 0.016,
  "lr_td": 0.0008,
+ "lr_ap": 0.128,
  "lr_trace": 0.256
 }

@@ -559,9 +559,14 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     to 0.016) give 528 to 578 without inhibition but the same asymmetry (0.62 to 0.71), so calcium keeps learning
     faster after the lift than without inhibition at every setting (its sharpening runs at gain 1 during the
     inhibited trials). The `l1` and `both` bounds are slower for calcium; `pre` is best.
-  - Figures: `results/figures/{control2,hebb2,bcm2,calcium2}` (17 panels each, PNG committed) with the Smith
-    expert trials control 952 +- 263 (702 to 1624), hebb 394 +- 65, bcm 442 +- 54, calcium 564 +- 81, no
-    divergence; `compare_control2_hebb2_bcm2_calcium2.png` and `fs12cd_wide_control2_hebb2_bcm2_calcium2.png`.
+  - Figures: `results/figures/{control2,hebb2,bcm2,calcium2}` (17 panels each, PNG committed; rebuilt on
+    2026-09-30 with the final code and finalists, `bcm2` now at `lr_bas` 0.256 / `bcm_tau` 200) with the Smith
+    expert trials (mean +- sd, no inhibition / after the lift): control 952 +- 263 (702 to 1624) / 1002 +- 246,
+    hebb 394 +- 65 / 232 +- 108, bcm 346 +- 69 / 337 +- 65, calcium 564 +- 81 / 357 +- 90, no divergence. By
+    the Smith criterion hebb and calcium are faster after the lift than without inhibition (the sandbox proxy
+    gave hebb a ratio of 0.98); bcm is symmetric. `compare_control2_hebb2_bcm2_calcium2.png` and
+    `fs12cd_wide_control2_hebb2_bcm2_calcium2.png`; at the new setting bcm forms about 95 texture and 40 tone
+    detectors and its distractor detectors overshoot to 850 before settling at 600.
     Selectivity: the control keeps 42 percent of the neurons texture-responsive (29 percent non-selective, 6 and 7
     percent go / no-go selective, responses proportional to the initial basal selectivity, up to +-9 with gain);
     hebb and bcm end with 86 to 89 percent unresponsive and about 3.5 percent go and 3.5 percent no-go detectors at
