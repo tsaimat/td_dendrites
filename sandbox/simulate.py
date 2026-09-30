@@ -42,6 +42,13 @@ DEFAULT_HP = dict(
     init_power=6,             # exponent applied to the uniform draws before normalization (sparsity of the init)
     init_sigma=1.0,           # lognormal init: log-standard deviation (larger = sparser)
     init_alpha=0.1,           # dirichlet init: concentration (smaller = sparser; 1 = uniform on the simplex)
+    gain_at_preferred=False,  # record each neuron's apical gain at the time steps when its preferred stimulus (the
+                              # input with the largest initial basal weight) is present, instead of at any step with
+                              # input above background (identical for the identity init; with a random init every
+                              # neuron is driven at every step, so the main code's record is the last input step)
+    sort_neurons=False,       # relabel the neurons of a random init so that columns 0, 1, 2 are the neurons with the
+                              # largest tone, T2 and T1 weight (a pure relabeling; lets the manuscript panels that
+                              # index neurons 1 and 2 show the best go / no-go neurons)
     n_trials=N_TRIALS,
     reset_at_lift=None,       # causal ablation only: at the lift of apical inhibition reset 'policy' (the agent's
                               # policy weights), 'w_ap' (apical weights), 'td' (value-estimator weights), or
@@ -92,6 +99,13 @@ def get_params_bu(hp: dict):
         thetas = THETA * torch.ones(n_z) + BKG
     else:
         raise ValueError(hp['init'])
+    if hp.get('sort_neurons') and hp['init'] != 'identity':  # SANDBOX: relabel neurons, see DEFAULT_HP
+        best = []
+        for stim in (0, T2_IDX, T1_IDX):
+            w = w_bas[stim].clone(); w[best] = -1
+            best.append(int(w.argmax()))
+        perm = best + [i for i in range(n_z) if i not in best]
+        w_bas, weights_apical, thetas = w_bas[:, perm], weights_apical[perm], thetas[perm]
     return n_stim, n_noise_stim, n_z, noise_probs, LR, w_bas, thetas.float(), weights_apical, int(hp['n_trials'])
 
 
@@ -142,6 +156,7 @@ def simulate_seed_bu(hp: dict = None, seed: int = 0) -> dict:
     base_input_time_idxs[1] = texture_t
     base_input_time_idxs[2] = texture_t
     x_bas_background = torch.ones(n_z) * BKG
+    preferred = w_bas.argmax(0)  # SANDBOX: for gain_at_preferred
 
     # Initialize agent and state value estimator
     actor = Agent(nr_inputs=n_z, policy_lr=plr)
@@ -237,7 +252,7 @@ def simulate_seed_bu(hp: dict = None, seed: int = 0) -> dict:
             z_h[j, :] = GAMMA * z_h[j, :] + x_som.numpy()
             v_hat_h[j, 1 + t] = v_hat_h[j, t] / GAMMA + dv_hat_now.numpy()
             td_delta_h[j, t] = GAMMA * dv_hat_now
-            driven = (x_bas - x_bas_background) > 0
+            driven = (x_in[preferred] > 0) if hp.get('gain_at_preferred') else (x_bas - x_bas_background) > 0  # SANDBOX
             gain_h[j, driven.numpy()] = gains[driven].detach().clone().numpy()
             if t == texture_t:
                 x_som_texture_h[j, :] = x_som.detach().clone().numpy()

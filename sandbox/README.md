@@ -24,6 +24,9 @@ the `l5apical` package. Delete this directory when done; nothing outside it depe
 | `diag_compare.py` | one-seed diagnostic with the same measures for every rule: where potentiation and depression go (row class x step type), across-neuron concentration of potentiation, sign of the post-synaptic factor vs the neuron's own drive, share of potentiation on the strongest synapse, detectors over time |
 | `diag_tone_ablation.py` | causal ablation: `us` / `burst` at diverging basal rates with the tone row's basal update zeroed, 5 seeds each |
 | `diag_gated_ablation.py` | `us` / `burst` with the running average optionally ignoring the outcome step (causal test only); per-block gain, baseline and sign statistics |
+| `smith.py` | Python port of the Smith et al. (2004) state-space estimator in `Smith/*.m` (validated: identical expert and learning trials, traces within the Monte Carlo noise of the Matlab version); `python -m sandbox.smith` runs the validation |
+| `figures.py` | reproduce every manuscript panel for a sandbox configuration without Matlab: `python -m sandbox.figures both <name> '<hp json>'` simulates 10 seeds (1800 trials and the 4000-trial inhibition protocol) with `store_full`, `sort_neurons` and `gain_at_preferred`, runs the Smith port, writes `results/figures/<name>/{default,perturbed}.pickle` in the format of `results/*.pickle`, and calls the panel functions with their file resolver redirected (`fs12b_theta0` is skipped); output in `results/figures/<name>/panels/` as PDF, SVG and PNG |
+| `selectivity.py` | `python -m sandbox.selectivity control hebb bcm calcium`: side-by-side comparison of how each rule changes the basal and somatic selectivity relative to the control (from the figure pickles) |
 | `check_reproduces.py` | asserts the mirror is bit-identical to the main code for `DEFAULT`, `APICAL_INHIBITION` and `BU_PLASTICITY` |
 
 Run everything in the repository's own conda env `tdd`, built as the top-level README describes
@@ -79,6 +82,10 @@ column `diverged` counts such seeds.
   concentration `init_alpha`), and the threshold scale. Larger
   `init_power` gives sparser initial weights; the median strongest weight of a neuron is about 0.19 at power 6, 0.28
   at 12 and 0.4 at 24 (with 33 stimuli).
+- `sort_neurons`, `gain_at_preferred`: figure helpers (default off). `sort_neurons` relabels a random init so that
+  neurons 0, 1, 2 are the ones with the largest tone, T2 and T1 weight (the manuscript panels index those neurons);
+  `gain_at_preferred` records each neuron's gain at the steps when its preferred input is present (with a random init
+  every neuron is driven at every step, so the main code's record would be the gain at the last input step).
 - `reset_at_lift`: causal ablation only (default `None`): at the lift of apical inhibition reset the policy weights
   (`policy`), the apical weights (`w_ap`), the value-estimator weights (`td`), all three (`all`), or all three plus
   the random number generators, re-consumed as at the start (`all_rng`, so the post-lift run equals a fresh run).
