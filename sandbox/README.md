@@ -56,7 +56,7 @@ column `diverged` counts such seeds.
 ## Hyperparameters (`DEFAULT_HP`)
 
 - `rule`, `bound`, `lr_bas`: the rule, how its update is bounded (`soft` = the `(1 - w) w` factor of the main code,
-  `l1` = per-neuron renormalization to sum 1, `clamp`, `none`), and the basal learning rate (the main code uses the
+  `l1` = per-neuron renormalization to sum 1, `pre` = each stimulus keeps its initial total outgoing weight across neurons, `both` = `l1` then `pre`, `clamp`, `none`), and the basal learning rate (the main code uses the
   common `LR` = 0.016).
 - `lr_ap`, `lr_policy`, `lr_td`, `lr_trace`: learning rates of the apical weights, the agent's policy network, the
   TD value estimator and the apical afferent trace `x_pre_t` (main code: all four equal `LR`).
@@ -82,6 +82,8 @@ column `diverged` counts such seeds.
   concentration `init_alpha`), and the threshold scale. Larger
   `init_power` gives sparser initial weights; the median strongest weight of a neuron is about 0.19 at power 6, 0.28
   at 12 and 0.4 at 24 (with 33 stimuli).
+- `init_norm`: `neuron` (default, each neuron's afferents sum to 1 as in the mixed model) or `stimulus` (each
+  stimulus's outgoing weights over the neurons sum to 1 as in the identity model, bounding the drive per stimulus).
 - `w_bas_scale`: stability test of a control condition (default 1): the initial basal weights are multiplied by this
   factor after the plasticity thresholds are set, so the population drive grows as it does under a sharpening rule.
 - `sort_neurons`, `gain_at_preferred`: figure helpers (default off). `sort_neurons` relabels a random init so that

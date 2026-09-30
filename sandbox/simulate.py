@@ -42,6 +42,9 @@ DEFAULT_HP = dict(
     init_power=6,             # exponent applied to the uniform draws before normalization (sparsity of the init)
     init_sigma=1.0,           # lognormal init: log-standard deviation (larger = sparser)
     init_alpha=0.1,           # dirichlet init: concentration (smaller = sparser; 1 = uniform on the simplex)
+    init_norm='neuron',       # normalization of a random init: 'neuron' (each neuron's afferents sum to 1, as in the
+                              # mixed model) or 'stimulus' (each stimulus's outgoing weights across neurons sum to
+                              # 1, as in the identity model, which bounds the population drive per stimulus)
     w_bas_scale=1.0,          # stability test of the control: multiply the initial basal weights by this factor after
                               # the plasticity thresholds are set (the population drive grows as under sharpening
                               # while the thresholds stay); 1.0 = main code
@@ -83,16 +86,16 @@ def get_params_bu(hp: dict):
     weights_apical = 0.05 + torch.rand(n_z) * 0.1
     noise_probs = [float(i / (n_noise_stim + 1)) for i in range(1, n_noise_stim + 1)]
     random_shuffle(noise_probs)
-    if hp['init'] == 'random':
-        w_bas = torch.nn.functional.normalize(torch.rand((n_stim, n_z)) ** hp['init_power'], p=1., dim=0)
-        probs = torch.tensor([1, 0.5, 0.5] + noise_probs) / N_TIME_STEPS
-        thetas = hp['theta_0'] * torch.matmul(probs[:], w_bas) + BKG
-    elif hp['init'] in ('lognormal', 'dirichlet'):
-        if hp['init'] == 'lognormal':
+    if hp['init'] in ('random', 'lognormal', 'dirichlet'):
+        if hp['init'] == 'random':
+            w_bas = torch.rand((n_stim, n_z)) ** hp['init_power']
+        elif hp['init'] == 'lognormal':
             w_bas = torch.exp(float(hp['init_sigma']) * torch.randn((n_stim, n_z)))
         else:
             w_bas = torch.distributions.Gamma(float(hp['init_alpha']) * torch.ones((n_stim, n_z)), torch.ones((n_stim, n_z))).sample()
-        w_bas = torch.nn.functional.normalize(w_bas, p=1., dim=0)
+        # SANDBOX: 'neuron' reproduces the mixed model (normalize over stimuli for each neuron); 'stimulus' normalizes
+        # each stimulus's outgoing weights over neurons (total drive 1 per stimulus, as in the identity model)
+        w_bas = torch.nn.functional.normalize(w_bas, p=1., dim=0 if hp.get('init_norm', 'neuron') == 'neuron' else 1)
         probs = torch.tensor([1, 0.5, 0.5] + noise_probs) / N_TIME_STEPS
         thetas = hp['theta_0'] * torch.matmul(probs[:], w_bas) + BKG
     elif hp['init'] == 'identity':
@@ -140,6 +143,7 @@ def simulate_seed_bu(hp: dict = None, seed: int = 0) -> dict:
     state['_e_x_som_sq_init'] = (torch.matmul(stim_probs, (w_bas + BKG) ** 2)
                                  + torch.clamp(1 - stim_probs.sum(), min=0) * BKG ** 2)
     state['_w_max_init'] = w_bas.max(0).values + BKG  # SANDBOX: strongest un-gained response, used by calcium
+    hp['_row_sums'] = w_bas.sum(1, keepdim=True).clone()  # SANDBOX: initial outgoing weight per stimulus, for bound 'pre' / 'both'
     # SANDBOX: the basal rule may use its own threshold scale; the apical rule always keeps thetas
     thetas_bas = thetas if hp.get('theta_bas_0') is None else (
         float(hp['theta_bas_0']) * torch.matmul(stim_probs, w_bas) + BKG).float()
