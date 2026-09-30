@@ -1,0 +1,13 @@
+{
+ "rule": "hebb",
+ "bound": "soft",
+ "lr_bas": 0.128,
+ "theta_bas_0": 16,
+ "theta_0": 4,
+ "lr_ap": 0.064,
+ "n_noise": 30,
+ "init_power": 12,
+ "lr_policy": 0.016,
+ "lr_td": 0.056,
+ "lr_trace": 0.256
+}

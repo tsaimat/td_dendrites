@@ -42,6 +42,9 @@ DEFAULT_HP = dict(
     init_power=6,             # exponent applied to the uniform draws before normalization (sparsity of the init)
     init_sigma=1.0,           # lognormal init: log-standard deviation (larger = sparser)
     init_alpha=0.1,           # dirichlet init: concentration (smaller = sparser; 1 = uniform on the simplex)
+    w_bas_scale=1.0,          # stability test of the control: multiply the initial basal weights by this factor after
+                              # the plasticity thresholds are set (the population drive grows as under sharpening
+                              # while the thresholds stay); 1.0 = main code
     gain_at_preferred=False,  # record each neuron's apical gain at the time steps when its preferred stimulus (the
                               # input with the largest initial basal weight) is present, instead of at any step with
                               # input above background (identical for the identity init; with a random init every
@@ -99,6 +102,8 @@ def get_params_bu(hp: dict):
         thetas = THETA * torch.ones(n_z) + BKG
     else:
         raise ValueError(hp['init'])
+    if float(hp.get('w_bas_scale', 1.0)) != 1.0:  # SANDBOX: stability test, see DEFAULT_HP
+        w_bas = w_bas * float(hp['w_bas_scale'])
     if hp.get('sort_neurons') and hp['init'] != 'identity':  # SANDBOX: relabel neurons, see DEFAULT_HP
         best = []
         for stim in (0, T2_IDX, T1_IDX):

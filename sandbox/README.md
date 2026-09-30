@@ -82,6 +82,8 @@ column `diverged` counts such seeds.
   concentration `init_alpha`), and the threshold scale. Larger
   `init_power` gives sparser initial weights; the median strongest weight of a neuron is about 0.19 at power 6, 0.28
   at 12 and 0.4 at 24 (with 33 stimuli).
+- `w_bas_scale`: stability test of a control condition (default 1): the initial basal weights are multiplied by this
+  factor after the plasticity thresholds are set, so the population drive grows as it does under a sharpening rule.
 - `sort_neurons`, `gain_at_preferred`: figure helpers (default off). `sort_neurons` relabels a random init so that
   neurons 0, 1, 2 are the ones with the largest tone, T2 and T1 weight (the manuscript panels index those neurons);
   `gain_at_preferred` records each neuron's gain at the steps when its preferred input is present (with a random init
