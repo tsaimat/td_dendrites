@@ -73,7 +73,7 @@ def compare(names):
             b = w0[s, T1_IDX] - w0[s, T2_IDX]
             ax.scatter(b, d, s=4, c=np.where(d > 0, COL_T1, COL_T2), alpha=0.6)
         ax.axhline(0, color='k', lw=0.5); ax.axvline(0, color='k', lw=0.5)
-        ax.set_xlabel('initial $w^{bas}_{Go} - w^{bas}_{NoGo}$'); ax.set_xlim(-1, 1); ax.set_ylim(-6, 6)
+        ax.set_xlabel('initial $w^{bas}_{Go} - w^{bas}_{NoGo}$'); ax.set_xlim(-1, 1); ax.set_ylim(-11, 11)
         if c == 0: ax.set_ylabel('$x^{som}(Go) - x^{som}(NoGo)$, last 100 trials')
         # row 4: detectors over trials
         ax = axs[3, c]
@@ -95,5 +95,49 @@ def compare(names):
     print('written', out)
 
 
+
+
+def fs12cd_wide(names, tr_threshold=0.1, x_max=10., n_ts=100):
+    """fs12cd of the manuscript for several configurations, with the histogram range widened to +-x_max so that the
+    gained detectors of the plasticity rules (response differences up to the maximal gain) are counted, and the pie
+    fractions (unresponsive / non-selective / go / no-go) computed over all neurons. Rows: configurations; columns:
+    first and last n_ts trials."""
+    from l5apical.panels import set_style
+    set_style()
+    fig, axs = plt.subplots(len(names), 2, figsize=(7, 2.2 * len(names)), squeeze=False)
+    bins = np.arange(-x_max, x_max + 0.2, 0.2); nb2 = len(bins) // 2 - 1
+    for r_i, name in enumerate(names):
+        res = load(name)
+        nn = len(res) * N_Z
+        for c, phase in enumerate(((0, n_ts), (N_TRIALS - n_ts, N_TRIALS))):
+            ax = axs[r_i, c]
+            d, n_resp = [], 0
+            for r in res:
+                resp = r[K_X_SOM_TXT][phase[0]:phase[1]].mean(0) > tr_threshold
+                x1 = get_texture_specific(True, r[K_OUTCOME], r[K_X_SOM_TXT])[phase[0]:phase[1]]
+                x2 = get_texture_specific(False, r[K_OUTCOME], r[K_X_SOM_TXT])[phase[0]:phase[1]]
+                dd = (np.nanmean(x1, 0) - np.nanmean(x2, 0))[resp]
+                d.append(dd); n_resp += int(resp.sum())
+            d = np.clip(np.concatenate(d), -x_max + 0.1, x_max - 0.1)
+            counts, _, patches = ax.hist(d, bins=bins)
+            for b, p in enumerate(patches):
+                p.set_facecolor(COL_T2 if b < nb2 else COL_T1 if b > nb2 + 1 else COL_DISTRACTOR)
+            numbers = [nn - n_resp, counts[nb2:nb2 + 2].sum(), counts[nb2 + 2:].sum(), counts[:nb2].sum()]
+            ins = ax.inset_axes([0.0, 0.45, 0.5, 0.55])
+            ins.pie(numbers, labels=[f'{100 * n / nn:.1f}%' for n in numbers], labeldistance=1.15,
+                    colors=['white', COL_DISTRACTOR, COL_T1, COL_T2], wedgeprops={'linewidth': 0.5, 'edgecolor': 'k'}, textprops={'size': 6})
+            ax.set_xlim(-x_max, x_max); ax.set_ylim(0, 0.03 * nn); ax.set_yticks([0.01 * k * nn for k in range(4)])
+            ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda x, pos: f'{100 * x / nn:g}'))
+            ax.spines[['right', 'top']].set_visible(False)
+            ax.set_xlabel('$x^{som}(go) - x^{som}(no-go)$' if r_i == len(names) - 1 else '')
+            ax.set_title(f"{name}, {'first' if c == 0 else 'last'} {n_ts} trials", fontsize=7)
+        axs[r_i, 0].set_ylabel('neurons [%]')
+    fig.tight_layout()
+    out = FIG_DIR / f"fs12cd_wide_{'_'.join(names)}"
+    fig.savefig(str(out) + '.png', dpi=130); fig.savefig(str(out) + '.pdf')
+    print('written', out)
+
+
 if __name__ == '__main__':
     compare(sys.argv[1:])
+    fs12cd_wide(sys.argv[1:])

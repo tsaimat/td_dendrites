@@ -463,6 +463,45 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
   - Recommended base condition: 30 distractors, power 12, policy 0.016, TD 0.056, apical 0.064, trace 0.256
     (1138 without inhibition, 1140 after the lift), or policy 0.032, TD 0.064, apical 0.128 (909 / 936) if 900
     trials is close enough to the target. Rule tuning (step 2) has to be redone at the chosen condition.
+- Figures without Matlab (2026-09-30): `sandbox/smith.py` is a validated port of the Smith et al. estimator
+  (identical expert and learning trials to `Smith/performances.mat`, traces within 3e-3 = the Matlab Monte Carlo
+  noise), `sandbox/figures.py` builds `results/figures/<name>/{default,perturbed}.pickle` for any sandbox
+  configuration (10 seeds, 1800 and 4000 trials, `store_full`, `sort_neurons` so that neurons 0, 1, 2 are the best
+  tone / T2 / T1 neurons, `gain_at_preferred` so that the gain record is the gain at each neuron's preferred input,
+  `K_W_BAS` holding the initial weights so the selectivity panels bin by initial selectivity) and reproduces all
+  manuscript panels except `fs12b_theta0` into `results/figures/<name>/panels/` (PDF, SVG, PNG).
+  `sandbox/selectivity.py` adds a cross-configuration comparison (`compare_*.png`: basal selectivity histograms
+  initial vs final, final vs initial weight per synapse class, late response selectivity vs initial basal
+  selectivity, detector counts over trials) and `fs12cd_wide_*.png`, the fs12cd panel with a +-10 range (the
+  manuscript's +-4 range and 0.1 responsiveness threshold hide the gained detectors of the rules).
+  - Control regime figures (`results/figures/control`): Smith expert trials 431 to 1128 (mean 747), after the lift
+    386 to 1196; the Smith criterion (lower 90 percent bound above chance) is more lenient than the sandbox proxy
+    (moving performance above 0.8), so the same runs read 750 instead of 1140 trials. All panels reproduce; the gain
+    panel (4f) shows the go / no-go neurons at gains 6 to 9 at texture time, the cue neuron at about 4.
+  - Rule figures at the current best settings of the slow-policy condition (`hebb` 0.128 / 16 / theta_0 4 / lr_ap
+    0.064; `bcm` 0.096 / tau 50 / e0 0.5 / lr_ap 0.032; `calcium` 0.001 / 0.5 / 1.5 / gamma_d 1.0 / beta 2 / lr_ap
+    0.128): Smith expert means 651 (hebb, 2 of 10 seeds diverge at trials 321 and 614), 664 (bcm, none diverge),
+    895 (calcium, 2 diverge at about 1200) versus 747 for the control. Selectivity picture: the control keeps a
+    graded code (late response selectivity proportional to the initial basal selectivity, 6 percent go and 6
+    percent no-go selective neurons); `hebb` prunes to a sparse code of about 2 go and 2 no-go detectors per seed
+    (basal selectivity exactly +-1, responses at +-9 = the maximal gain) and silences 98.5 percent of the neurons;
+    `bcm` similar (5 texture detectors, 130 distractor detectors per seed, 93 percent unresponsive); `calcium` is
+    intermediate (graded but sharpened, 9 texture and 100 distractor detectors, 90 percent unresponsive).
+- Step 2 at the chosen base condition (policy 0.016, TD 0.056, trace 0.256; sweeps `s3_rules`, `s3_inh`,
+  `s3_refine`, `s3_fin10`, `s3_fin_inh`, `s3_stab`, `s3_stab_inh`, summaries only; control 1138 / 1140 by the
+  proxy): the rules are less stable here than at the fast policy rate, because the policy takes long to learn and
+  the sharpening has time to run away. 10-seed finalists (no-inhibition / after lift, runs lost of 20): `hebb`
+  0.128 / 16 / 4 / lr_ap 0.064: 747 / 836, 9 lost (2 divergences and slow seeds without inhibition, 1 divergence
+  and over-pruned seeds with); `bcm` 0.096 / 50 / 0.5 / 0.032: 919 / 1006, 5 lost (post-lift collapse in 4 of 10);
+  `calcium` 0.001 / 0.5 / 1.5 / 1.0 / 0.128: 883 / 908, 8 lost (2 divergences in each protocol). Stability round
+  (lower `lr_ap` 0.032 to 0.064, `ca_theta_p` 2.0, `theta_bas_0` up to 18, `bcm_e0_scale` 0.25, 5 seeds each
+  protocol): the only settings without any lost seed barely act (`calcium` 0.0005 / 0.5 / 2.0 / 1.0 / 0.064:
+  1011 / 1100 vs control 1138 / 1140; `bcm` at `lr_ap` 0.016: 1284 / 1545). `hebb` at this condition is
+  asymmetric in the other direction (352 to 558 after the lift vs 871 to 1157 without: 1800 blind trials of
+  pruning leave a sharpened network that then learns twice as fast) and always loses 2 to 4 of 10 runs. So at
+  policy 0.016 no rule gives a large, clean, symmetric speed-up; the user has to decide between a modest clean one
+  (calcium with a high LTP threshold, about 10 percent), accepting 10 to 20 percent lost seeds, or a faster base
+  condition.
 - Open decision: the shared environment can be 203 neurons at `init_power` 12 (100 neurons also works for calcium but
   not for any gated rule). Calcium, `hebb` with `theta_bas_0` 16 and constant LTD with L1 (`rule` none, `lr_dep`
   0.016 `const`) are the settings that beat the control by a wide margin (pruning 392 to 547 trials, calcium 328

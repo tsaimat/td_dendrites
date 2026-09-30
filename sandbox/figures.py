@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from l5apical.helper import *
-from sandbox.simulate import simulate_seed_bu, K_HP
+from sandbox.simulate import simulate_seed_bu, K_HP, K_W_BAS_H
 from sandbox.smith import run_analysis
 
 FIG_DIR = Path(__file__).parent / 'results' / 'figures'
@@ -47,6 +47,9 @@ def build(name: str, hp: dict, seeds: int = N_SEEDS, workers: int = 4) -> None:
         with Pool(workers) as p:
             res = dict(p.map(_run, [(full, s) for s in range(seeds)]))
         results = [res[s] for s in range(seeds)]
+        for r in results:  # panels bin by K_W_BAS; keep the initial weights there (final ones stay in the snapshot history)
+            r['w_bas_final'] = r[K_W_BAS]
+            r[K_W_BAS] = r[K_W_BAS_H][0]
         with open(out / fname, 'wb') as f:
             pickle.dump(results, f)
         ex = [r[K_EXPERT_T] for r in results]
