@@ -569,6 +569,15 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     code (64 percent unresponsive, 22 percent non-selective, 7 percent go, 7 percent no-go) with responses spread
     between 0 and +-9. At this population size the initial control already has 40 texture and 620 distractor
     detectors per 1000 neurons, and the rules mostly convert the graded middle into either detectors or silence.
+- Current state (2026-09-30, read this first; the "Open decision" and "Todo list" bullets below are from
+  September 25 to 29 and superseded): the base condition is 1000 neurons, 30 distractors, lognormal init
+  (`init_sigma` 2, per-neuron normalized, `init_scale` 1.89, `init_clip` 1), `theta_0` 4, `lr_policy` 0.016,
+  `lr_td` 0.0008, `lr_ap` 0.128, `lr_trace` 0.256 (control 1038 / 1090 trials, 1.7-fold drive margin). Tuned
+  rules at it: `hebb` soft 0.256 / threshold 8 (473 / 464), `bcm` soft 0.256 / tau 200 / e0 0.5 (427 / 414),
+  `calcium` pre 0.004 / 0.5 / 1.5 / 1.0 / beta 2 (639 / 431), all with `lr_ap` 0.128 and no divergence anywhere.
+  Figure sets and comparison plots for these four are committed under `sandbox/results/figures/`. The main code is
+  untouched. Next: the user picks the rule(s) for the figure, then port rule, init, population and rates into
+  `helper.py` / `simulate_seed()`, regenerate `results_bup.pickle` and the performance traces, design the panels.
 - Open decision: the shared environment can be 203 neurons at `init_power` 12 (100 neurons also works for calcium but
   not for any gated rule). Calcium, `hebb` with `theta_bas_0` 16 and constant LTD with L1 (`rule` none, `lr_dep`
   0.016 `const`) are the settings that beat the control by a wide margin (pruning 392 to 547 trials, calcium 328
