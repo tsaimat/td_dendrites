@@ -526,6 +526,22 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     1053 after the lift (5 seeds; ratio 1.05), performance 0.52 during inhibition, no divergence at 1.41- and
     1.7-fold drive; one run of 15 is a slow seed beyond the horizon, not a divergence. The margin therefore covers
     the drive growth the clamped rules showed; a 2-fold amplitude margin would cost the target (TD 0.002, 1650).
+- Population set to 1000 neurons (user, 2026-09-30, to reduce the seed lottery) and the control retuned (sweeps
+  `c10_nz1000`, `c11_*`, `c12_theta`, `c13_*`; summaries only). Structure at 1000 neurons: with the lognormal init
+  (sigma 2, per-neuron normalized, clipped at 1) one third texture-responsive needs a total input of 1.89 at 30
+  distractors (2.26 at 50, 2.58 at 100); up to 50 distractors every seed has 3 to 5 saturated texture synapses per
+  texture and 19 to 31 texture-dominant neurons per texture, at 75 to 100 some seeds again lack a strong texture
+  synapse. 50 distractors at its one-third scale learns too slowly (fails within 2500 trials at any TD rate) and
+  needs a total of 3.0 to 3.8 (65 to 83 percent responsive) to learn, so the user chose 30 distractors. A run of
+  2500 trials takes about 11 s at this size.
+  - Final control (user-approved regime, rates tuned here): `n_z` 1000, `n_noise` 30, `init` lognormal,
+    `init_sigma` 2, `init_norm` neuron, `init_scale` 1.89, `init_clip` 1, `theta_0` 4, `lr_policy` 0.016,
+    `lr_td` 0.0008, `lr_ap` 0.128, `lr_trace` 0.256: 1038 trials (10 seeds, no losses), 1090 after the lift (5
+    seeds, ratio 1.05, chance during inhibition), no divergence at 1.7-fold drive (486 trials there), divergence at
+    2-fold. TD 0.001 gives 855 / 915 with the same margin, 0.0006 gives 1305 / 1354 and survives 2-fold. The trace
+    rate (0.128 to 0.512) and the apical rate (0.128 vs 0.256) change nothing; `theta_0` 8 stops learning;
+    `theta_0` 2 is 25 percent faster but has no margin at all (1.7-fold diverges in every seed) and a post-lift
+    ratio of 1.2, so 4 stays. Policy 0.008 is 5 to 10 percent slower with the same margin.
 - Open decision: the shared environment can be 203 neurons at `init_power` 12 (100 neurons also works for calcium but
   not for any gated rule). Calcium, `hebb` with `theta_bas_0` 16 and constant LTD with L1 (`rule` none, `lr_dep`
   0.016 `const`) are the settings that beat the control by a wide margin (pruning 392 to 547 trials, calcium 328
