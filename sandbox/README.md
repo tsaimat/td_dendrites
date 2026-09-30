@@ -84,6 +84,7 @@ column `diverged` counts such seeds.
   at 12 and 0.4 at 24 (with 33 stimuli).
 - `init_scale`: factor on the normalized random init before the thresholds are set (the total basal input per neuron
   for `neuron` normalization); unlike `w_bas_scale` it is part of the initialization, not a stability test.
+- `init_clip`: clamp the initial weights to at most this value (default `None`); the base condition uses 1.0.
 - `init_norm`: `neuron` (default, each neuron's afferents sum to 1 as in the mixed model) or `stimulus` (each
   stimulus's outgoing weights over the neurons sum to 1 as in the identity model, bounding the drive per stimulus).
 - `w_bas_scale`: stability test of a control condition (default 1): the initial basal weights are multiplied by this

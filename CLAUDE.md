@@ -502,6 +502,30 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
   policy 0.016 no rule gives a large, clean, symmetric speed-up; the user has to decide between a modest clean one
   (calcium with a high LTP threshold, about 10 percent), accepting 10 to 20 percent lost seeds, or a faster base
   condition.
+- Base condition rebuilt from structure (user, 2026-09-30): a slow policy rate is wanted; the control must be
+  robust (bottom-up plasticity must never diverge an agent); basal weights are hard-constrained to [0, 1] (every
+  sandbox bound now clamps to [0, 1], and the normalizing bounds `l1`, `pre`, `both` preserve the initial totals);
+  the initialization was chosen on structural grounds before any learning: lognormal synaptic strengths
+  (`init` lognormal, `init_sigma` 2), per-neuron normalized (`init_norm` neuron) and scaled to a total input of
+  1.5 per neuron (`init_scale` 1.5), clipped at 1 (`init_clip` 1), with 20 distractors, which gives one third
+  texture-responsive neurons at initialization by the manuscript's criterion (mean texture-time response above 0.1;
+  responsiveness is set by the mean weight, so with the paper's convention of total input 1 the one-third point is
+  at 10 distractors, and 20 to 30 distractors need a total of 1.5 to 1.9; unnormalized lognormals have no scale and
+  a tail of single synapses of weight 10 to 50, per-stimulus normalization bounds totals but not synapses, per-neuron
+  normalization tames the tail). Stability test: `w_bas_scale` multiplies the initial weights after the thresholds
+  are set; the value estimator's effective step grows with the square of the drive, so a control's margin in drive
+  amplitude is about the square root of the ratio between the divergence TD rate and its own. Old-init evidence
+  (`c4_stab`, `c5_scale`, `c6_init`): at TD 0.016 or more every control diverges at twice the drive; at 0.008 it
+  survives twice but not four times; the rules with the old init doubled the squared drive per texture (calcium),
+  i.e. a 1.4-fold amplitude.
+  - At the new init (sweeps `c7_ctrl`, `c8_ctrl`, `c9_ctrl10`, `c9_ctrl_inh`, `c9_margin`; policy 0.008 or 0.016,
+    trace 0.256): TD 0.004 gives 930 to 1080 trials, survives 1.41- and 1.7-fold drive in every seed (and learns 2
+    to 3 times faster there), diverges at 2-fold; TD 0.003 gives 1180 to 1400, loses 2 to 3 of 5 at 2-fold; TD
+    0.002 survives 2-fold but needs 1600 to 1760 trials. Trace 1.0 and apical 0.064 to 0.256 change little.
+  - Recommended base condition: policy 0.016, TD 0.0035, apical 0.128, trace 0.256: 1004 trials (10 seeds) and
+    1053 after the lift (5 seeds; ratio 1.05), performance 0.52 during inhibition, no divergence at 1.41- and
+    1.7-fold drive; one run of 15 is a slow seed beyond the horizon, not a divergence. The margin therefore covers
+    the drive growth the clamped rules showed; a 2-fold amplitude margin would cost the target (TD 0.002, 1650).
 - Open decision: the shared environment can be 203 neurons at `init_power` 12 (100 neurons also works for calcium but
   not for any gated rule). Calcium, `hebb` with `theta_bas_0` 16 and constant LTD with L1 (`rule` none, `lr_dep`
   0.016 `const`) are the settings that beat the control by a wide margin (pruning 392 to 547 trials, calcium 328

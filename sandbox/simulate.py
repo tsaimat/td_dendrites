@@ -44,6 +44,8 @@ DEFAULT_HP = dict(
     init_alpha=0.1,           # dirichlet init: concentration (smaller = sparser; 1 = uniform on the simplex)
     init_scale=1.0,           # random inits: factor on the normalized weights before the thresholds are set (total
                               # basal input per neuron for 'neuron' normalization); part of the initialization
+    init_clip=None,           # random inits: clamp the initial weights to at most this value after scaling (None: no
+                              # clamp); the user's hard constraint for plastic weights is [0, 1], so use 1.0 with it
     init_norm='neuron',       # normalization of a random init: 'neuron' (each neuron's afferents sum to 1, as in the
                               # mixed model) or 'stimulus' (each stimulus's outgoing weights across neurons sum to
                               # 1, as in the identity model, which bounds the population drive per stimulus)
@@ -99,6 +101,8 @@ def get_params_bu(hp: dict):
         # each stimulus's outgoing weights over neurons (total drive 1 per stimulus, as in the identity model)
         w_bas = torch.nn.functional.normalize(w_bas, p=1., dim=0 if hp.get('init_norm', 'neuron') == 'neuron' else 1)
         w_bas = w_bas * float(hp.get('init_scale', 1.0))  # SANDBOX
+        if hp.get('init_clip') is not None:  # SANDBOX
+            w_bas = torch.clamp(w_bas, max=float(hp['init_clip']))
         probs = torch.tensor([1, 0.5, 0.5] + noise_probs) / N_TIME_STEPS
         thetas = hp['theta_0'] * torch.matmul(probs[:], w_bas) + BKG
     elif hp['init'] == 'identity':
