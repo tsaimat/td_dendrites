@@ -65,6 +65,7 @@ def plot(name: str, skip: tuple = ('fs12b_theta0',)) -> None:
     n_trials = {Simulation.DEFAULT: N_TRIALS, Simulation.MIXED_SELECTIVITY: N_TRIALS, Simulation.APICAL_INHIBITION: N_TRIALS_AP_INH}
     P.get_path = lambda simulation=Simulation.DEFAULT, theta_0=THETA_0: paths[simulation]
     P.get_params = lambda simulation=Simulation.DEFAULT, theta_0=THETA_0: (None,) * 8 + (n_trials[simulation],)
+    P.N_Z = pickle.load(open(out / 'default.pickle', 'rb'))[0][K_W_AP].shape[1]  # the panels loop over N_Z neurons
     P.PLOT_DIR = out / 'panels'
     P.PLOT_DIR.mkdir(parents=True, exist_ok=True)
     (P.PLOT_DIR / P.SVG_DIR).mkdir(exist_ok=True)

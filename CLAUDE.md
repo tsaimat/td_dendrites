@@ -542,6 +542,33 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     rate (0.128 to 0.512) and the apical rate (0.128 vs 0.256) change nothing; `theta_0` 8 stops learning;
     `theta_0` 2 is 25 percent faster but has no margin at all (1.7-fold diverges in every seed) and a post-lift
     ratio of 1.2, so 4 stays. Policy 0.008 is 5 to 10 percent slower with the same margin.
+- Rule tuning at the final control (1000 neurons, 30 distractors; sweeps `r5_rules`, `r5_ext`, `r5_top10`,
+  `r5_top_inh`, `r5_top_long`, `r5_ext10`, `r5_ext_inh`, `r5_long2`; policy 0.016, TD 0.0008, trace 0.256,
+  `theta_0` 4 fixed; `lr_ap`, `lr_bas`, constants and the bound free; all bounds clamp to [0, 1]): not a single
+  divergence in 120 + 24 grid configurations, 10-seed confirmations, the inhibition protocol or 4000-trial runs.
+  Control: 1038 / 1090 (no inhibition / after the lift). Finalists (10 seeds / 5 seeds after the lift, ratio):
+  - `hebb`, soft bound, `lr_bas` 0.256, `theta_bas_0` 8, `lr_ap` 0.128: 473 / 464 (0.98), stable to 4000 trials
+    (10 seeds); prunes the total input per neuron from 1.84 to 1.14 and forms 25 tone, 66 texture and 718
+    distractor one-hot detectors of 1000 neurons. With the combined bound (`both`, `lr_bas` 0.064, `theta_bas_0`
+    32) it is faster (356 / 338) but loses 1 of 10 seeds late in a 4000-trial run, so the soft bound is the one.
+  - `bcm`, soft bound, `lr_bas` 0.256, `bcm_tau` 200, `bcm_e0_scale` 0.5, `lr_ap` 0.128: 427 / 414 (0.97), stable
+    to 4000 trials (10 seeds; `lr_bas` 0.512 with `bcm_tau` 200 diverges in every seed, with `bcm_tau` 100 it is
+    417 / 346). The earlier finalist `lr_bas` 0.128, `bcm_tau` 100: 515 / 440 (0.85).
+  - `calcium`, `pre` bound (each stimulus keeps its total outgoing weight), `lr_bas` 0.004, `ca_ltd_frac` 0.5,
+    `ca_theta_p` 1.5, `ca_gamma_d` 1.0, `ca_beta` 2, `lr_ap` 0.128: 639 / 431 (0.67); faster basal rates (0.008
+    to 0.016) give 528 to 578 without inhibition but the same asymmetry (0.62 to 0.71), so calcium keeps learning
+    faster after the lift than without inhibition at every setting (its sharpening runs at gain 1 during the
+    inhibited trials). The `l1` and `both` bounds are slower for calcium; `pre` is best.
+  - Figures: `results/figures/{control2,hebb2,bcm2,calcium2}` (17 panels each, PNG committed) with the Smith
+    expert trials control 952 +- 263 (702 to 1624), hebb 394 +- 65, bcm 442 +- 54, calcium 564 +- 81, no
+    divergence; `compare_control2_hebb2_bcm2_calcium2.png` and `fs12cd_wide_control2_hebb2_bcm2_calcium2.png`.
+    Selectivity: the control keeps 42 percent of the neurons texture-responsive (29 percent non-selective, 6 and 7
+    percent go / no-go selective, responses proportional to the initial basal selectivity, up to +-9 with gain);
+    hebb and bcm end with 86 to 89 percent unresponsive and about 3.5 percent go and 3.5 percent no-go detectors at
+    the maximal gain (responses at +-9, basal selectivity exactly +-1), i.e. a sparse code; calcium keeps a graded
+    code (64 percent unresponsive, 22 percent non-selective, 7 percent go, 7 percent no-go) with responses spread
+    between 0 and +-9. At this population size the initial control already has 40 texture and 620 distractor
+    detectors per 1000 neurons, and the rules mostly convert the graded middle into either detectors or silence.
 - Open decision: the shared environment can be 203 neurons at `init_power` 12 (100 neurons also works for calcium but
   not for any gated rule). Calcium, `hebb` with `theta_bas_0` 16 and constant LTD with L1 (`rule` none, `lr_dep`
   0.016 `const`) are the settings that beat the control by a wide margin (pruning 392 to 547 trials, calcium 328

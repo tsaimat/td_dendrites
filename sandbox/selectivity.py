@@ -29,7 +29,7 @@ def load(name):
 
 def phase_fractions(results, phase, tr_threshold=0.1, sel=0.2):
     """As in fs12cd: fractions of unresponsive, non-selective, go-selective and no-go-selective neurons in a phase."""
-    n = 0; unresp = 0; nonsel = 0; go = 0; nogo = 0
+    n = 0; unresp = 0; nonsel = 0; go = 0; nogo = 0  # n counts the data's neurons, whatever N_Z is
     for r in results:
         x1 = get_texture_specific(True, r[K_OUTCOME], r[K_X_SOM_TXT])[phase[0]:phase[1]]
         x2 = get_texture_specific(False, r[K_OUTCOME], r[K_X_SOM_TXT])[phase[0]:phase[1]]
@@ -108,7 +108,7 @@ def fs12cd_wide(names, tr_threshold=0.1, x_max=10., n_ts=100):
     bins = np.arange(-x_max, x_max + 0.2, 0.2); nb2 = len(bins) // 2 - 1
     for r_i, name in enumerate(names):
         res = load(name)
-        nn = len(res) * N_Z
+        nn = len(res) * res[0][K_X_SOM_TXT].shape[1]
         for c, phase in enumerate(((0, n_ts), (N_TRIALS - n_ts, N_TRIALS))):
             ax = axs[r_i, c]
             d, n_resp = [], 0
