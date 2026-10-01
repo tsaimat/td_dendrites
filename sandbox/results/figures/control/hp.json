@@ -1,9 +1,0 @@
-{
- "rule": "none",
- "n_noise": 30,
- "init_power": 12,
- "lr_policy": 0.016,
- "lr_td": 0.056,
- "lr_trace": 0.256,
- "lr_ap": 0.064
-}

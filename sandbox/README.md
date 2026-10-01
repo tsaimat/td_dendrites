@@ -2,28 +2,21 @@
 
 Throwaway code for trying out basal (bottom-up) plasticity rules and tuning their hyperparameters without touching
 the `l5apical` package. Delete this directory when done; nothing outside it depends on it. Results are written to
-`sandbox/results/` which is gitignored.
+`sandbox/results/`; pickles there are gitignored, the sweep summaries, `hp.json` files and panels are committed.
 
 ## Layout
 
 | file | purpose |
 |---|---|
-| `rules.py` | the candidate rules (all with the same signature, registered in `RULES`), their default hyperparameters (`RULE_HP`) and the weight-bounding mechanisms (`apply_bound`) |
-| `plasticity_rules_tmp.py` | the literature rules as originally written in generic rate-model variables; `rules.py` maps them onto this model (see the module docstring there) |
+| `rules.py` | the candidate rules (all with the same signature, registered in `RULES`), their default hyperparameters (`RULE_HP`) and the weight-bounding mechanisms (`apply_bound`); `hebb`, `bcm` and `calcium` are the ones carried forward, `gated_hebb`, `burst`, `us` and `oja` were set aside (see `NOTES.md`) |
 | `simulate.py` | mirror of `l5apical.simulations.simulate_seed` with a rule hook, hyperparameter dict, optional apical inhibition, w_bas snapshots, and cheap Python metrics (no Matlab needed) |
 | `sweep.py` | CLI: run a single config or a cartesian grid, parallel over (config, seed), writes pickles + `summary.csv`; `--summary-only` keeps no pickles (a slim 4000-trial seed at 1000 neurons is about 65 MB, so large confirmation sweeps need it) |
 | `plot.py` | CLI: one overview figure per config plus a cross-config comparison |
-| `sign_maps.py` | CLI: instantaneous update of every rule over the (apical gain, basal weight) plane |
 | `best.py` | print the best configurations of a sweep per rule and init power (`python -m sandbox.best <name> [n]`) |
 | `pair.py` | join a sweep with its inhibition twin and print expert, expert after the lift and their ratio per configuration |
 | `show.py`, `tab.py` | print sweep summaries (`show` the full table, `tab` a compact ranked one with one column per varied hyperparameter) |
 | `compare.py` | overlay performance and detector counts of several configurations in one figure |
 | `diag.py` | one-seed diagnostic of the apical loop (TD error, `x_pre_t`, apical weights, gains, texture weights) |
-| `diag_gated.py` | one-seed diagnostic of `us` / `burst`: post-synaptic factor at texture time by texture, update mass per stimulus class, weight trajectories of the most texture-selective neurons |
-| `diag_gh.py` | one-seed diagnostic of `gated_hebb`: post-synaptic factor `gate * (post - theta)` at tone and texture time (fraction of neurons potentiated, T1 vs T2), potentiation and depression mass per stimulus class, weight trajectories and detector counts |
-| `diag_compare.py` | one-seed diagnostic with the same measures for every rule: where potentiation and depression go (row class x step type), across-neuron concentration of potentiation, sign of the post-synaptic factor vs the neuron's own drive, share of potentiation on the strongest synapse, detectors over time |
-| `diag_tone_ablation.py` | causal ablation: `us` / `burst` at diverging basal rates with the tone row's basal update zeroed, 5 seeds each |
-| `diag_gated_ablation.py` | `us` / `burst` with the running average optionally ignoring the outcome step (causal test only); per-block gain, baseline and sign statistics |
 | `smith.py` | Python port of the Smith et al. (2004) state-space estimator in `Smith/*.m` (validated: identical expert and learning trials, traces within the Monte Carlo noise of the Matlab version); `python -m sandbox.smith` runs the validation |
 | `figures.py` | reproduce every manuscript panel for a sandbox configuration without Matlab: `python -m sandbox.figures both <name> '<hp json>'` simulates 10 seeds (1800 trials and the 4000-trial inhibition protocol) with `store_full`, `sort_neurons` and `gain_at_preferred`, runs the Smith port, writes `results/figures/<name>/{default,perturbed}.pickle` in the format of `results/*.pickle`, and calls the panel functions with their file resolver redirected (`fs12b_theta0` is skipped); output in `results/figures/<name>/panels/` as PDF, SVG and PNG |
 | `selectivity.py` | `python -m sandbox.selectivity control hebb bcm calcium`: side-by-side comparison of how each rule changes the basal and somatic selectivity relative to the control (from the figure pickles) |
@@ -38,7 +31,6 @@ Do not use other envs on the machine.
 
 ```
 python -m sandbox.check_reproduces            # run after any change to simulate.py or the main trial loop
-python -m sandbox.sign_maps                   # sandbox/results/sign_maps.png
 python -m sandbox.sweep --name rules --set init_power=12 --grid '{"rule": ["burst", "us", "bcm"], "bound": ["soft", "l1"], "lr_bas": [0.016, 0.064]}' --seeds 5 --workers 8
 python -m sandbox.sweep --name rules_inh --set init_power=12 n_trials=4000 n_trials_inhibited=1800 --grid '{"rule": ["burst", "us"]}' --seeds 5
 python -m sandbox.sweep --name baseline_default --set rule=none init=identity n_noise=200 --seeds 5   # the paper's default model
@@ -133,6 +125,6 @@ Variables: `x_in` binary stimuli, `x_bas` basal drive, `x_ap` apical activation 
 
 The stimulus ordering in `w_bas` rows is: 0 tone cue, 1 texture T2, 2 texture T1, then distractors.
 
-## Findings so far
+## Findings
 
-See the notes at the end of `CLAUDE.md`.
+The current state is in `CLAUDE.md`; the full chronological exploration notes (September 2026, mostly superseded) are in `sandbox/NOTES.md`.

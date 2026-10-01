@@ -33,9 +33,9 @@ the mechanism that keeps the weights bounded are chosen independently:
 The rules are called once per time step of the stimulus period and once at the outcome time step (with x_in = 0),
 so slow variables also see the outcome-time apical activity.
 
-Mapping of the literature rules in sandbox/plasticity_rules_tmp.py onto this model
------------------------------------------------------------------------------------
-The neuron there is  x_som = gain(x_ap) * x_bas  with x_bas = w_bas . x_pre, which is exactly this model with
+Mapping of the literature rules (written in generic rate-model variables) onto this model
+-------------------------------------------------------------------------------------------
+The generic neuron is  x_som = gain(x_ap) * x_bas  with x_bas = w_bas . x_pre, which is exactly this model with
 x_pre = x_in (binary stimuli), gain() = helper.gain, and the apical activation x_ap = helper.apical_transfer(...).
 'dt' is one time step, so it is absorbed into lr_bas. The resting apical activation is apical_transfer(0) =
 1/MAX_GAIN, where gain = 1.
