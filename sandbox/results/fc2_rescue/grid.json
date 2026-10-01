@@ -1,0 +1,18 @@
+{
+ "base": {
+  "n_z": 1000,
+  "n_noise": 30,
+  "init": "lognormal",
+  "init_sigma": 2,
+  "init_scale": 1.89,
+  "init_clip": 1,
+  "lr_policy": 0.016,
+  "lr_trace": 0.256,
+  "lr_td": 0.0035,
+  "theta_0": 3,
+  "lr_ap": 0.512
+ },
+ "grid": {},
+ "seeds": 5,
+ "summary_only": true
+}

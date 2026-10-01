@@ -1,0 +1,32 @@
+{
+ "base": {
+  "rule": "none",
+  "n_z": 1000,
+  "n_noise": 30,
+  "init": "lognormal",
+  "init_sigma": 2,
+  "init_scale": 1.89,
+  "init_clip": 1,
+  "lr_trace": 0.256,
+  "theta_0": 4
+ },
+ "grid": {
+  "lr_td": [
+   0.004,
+   0.005,
+   0.006,
+   0.007
+  ],
+  "lr_ap": [
+   0.128,
+   0.256,
+   0.512
+  ],
+  "lr_policy": [
+   0.008,
+   0.016,
+   0.024
+  ]
+ },
+ "seeds": 10
+}

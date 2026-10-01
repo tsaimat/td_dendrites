@@ -11,7 +11,7 @@ the `l5apical` package. Delete this directory when done; nothing outside it depe
 | `rules.py` | the candidate rules (all with the same signature, registered in `RULES`), their default hyperparameters (`RULE_HP`) and the weight-bounding mechanisms (`apply_bound`) |
 | `plasticity_rules_tmp.py` | the literature rules as originally written in generic rate-model variables; `rules.py` maps them onto this model (see the module docstring there) |
 | `simulate.py` | mirror of `l5apical.simulations.simulate_seed` with a rule hook, hyperparameter dict, optional apical inhibition, w_bas snapshots, and cheap Python metrics (no Matlab needed) |
-| `sweep.py` | CLI: run a single config or a cartesian grid, parallel over (config, seed), writes pickles + `summary.csv` |
+| `sweep.py` | CLI: run a single config or a cartesian grid, parallel over (config, seed), writes pickles + `summary.csv`; `--summary-only` keeps no pickles (a slim 4000-trial seed at 1000 neurons is about 65 MB, so large confirmation sweeps need it) |
 | `plot.py` | CLI: one overview figure per config plus a cross-config comparison |
 | `sign_maps.py` | CLI: instantaneous update of every rule over the (apical gain, basal weight) plane |
 | `best.py` | print the best configurations of a sweep per rule and init power (`python -m sandbox.best <name> [n]`) |
@@ -27,6 +27,7 @@ the `l5apical` package. Delete this directory when done; nothing outside it depe
 | `smith.py` | Python port of the Smith et al. (2004) state-space estimator in `Smith/*.m` (validated: identical expert and learning trials, traces within the Monte Carlo noise of the Matlab version); `python -m sandbox.smith` runs the validation |
 | `figures.py` | reproduce every manuscript panel for a sandbox configuration without Matlab: `python -m sandbox.figures both <name> '<hp json>'` simulates 10 seeds (1800 trials and the 4000-trial inhibition protocol) with `store_full`, `sort_neurons` and `gain_at_preferred`, runs the Smith port, writes `results/figures/<name>/{default,perturbed}.pickle` in the format of `results/*.pickle`, and calls the panel functions with their file resolver redirected (`fs12b_theta0` is skipped); output in `results/figures/<name>/panels/` as PDF, SVG and PNG |
 | `selectivity.py` | `python -m sandbox.selectivity control hebb bcm calcium`: side-by-side comparison of how each rule changes the basal and somatic selectivity relative to the control (from the figure pickles) |
+| `speedup.py` | `python -m sandbox.speedup slow:control2,hebb2,bcm2,calcium2 fast:control3,hebb3,bcm3,calcium3`: summary figure of the speed-up by each rule in one or more control conditions (mean Smith performance traces without inhibition and in the inhibition protocol, per-seed Smith expert trials without inhibition and after the lift), from the figure pickles |
 | `check_reproduces.py` | asserts the mirror is bit-identical to the main code for `DEFAULT`, `APICAL_INHIBITION` and `BU_PLASTICITY` |
 
 Run everything in the repository's own conda env `tdd`, built as the top-level README describes

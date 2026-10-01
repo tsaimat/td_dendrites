@@ -1,0 +1,36 @@
+{
+ "base": {
+  "n_z": 1000,
+  "n_noise": 30,
+  "init": "lognormal",
+  "init_sigma": 2,
+  "init_scale": 1.89,
+  "init_clip": 1,
+  "lr_policy": 0.016,
+  "lr_td": 0.0035,
+  "lr_trace": 0.256,
+  "theta_0": 3,
+  "rule": "bcm",
+  "bound": "soft",
+  "bcm_e0_scale": 0.5
+ },
+ "grid": {
+  "lr_bas": [
+   0.064,
+   0.128,
+   0.256,
+   0.512
+  ],
+  "bcm_tau": [
+   100,
+   200,
+   400
+  ],
+  "lr_ap": [
+   0.256,
+   0.512
+  ]
+ },
+ "seeds": 5,
+ "summary_only": true
+}

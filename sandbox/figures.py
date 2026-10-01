@@ -71,6 +71,12 @@ def plot(name: str, skip: tuple = ('fs12b_theta0',)) -> None:
     (P.PLOT_DIR / P.SVG_DIR).mkdir(exist_ok=True)
     import matplotlib
     matplotlib.use('Agg')
+    _tukey = P.stats.tukey_hsd
+    def tukey_safe(*groups):  # fast learners have an empty learning phase in most seeds; then skip the test (no stars)
+        if min(len(g) for g in groups) < 2:
+            return type('R', (), {'pvalue': np.ones((len(groups), len(groups)))})()
+        return _tukey(*groups)
+    P.stats.tukey_hsd = tukey_safe
     _save = P.save_or_show
     def save_png_too(saving, plot_dir, plot_name, plot_dpi=600):  # a PNG copy for quick viewing
         matplotlib.pyplot.savefig(plot_dir / f"{plot_name}.png", dpi=150)

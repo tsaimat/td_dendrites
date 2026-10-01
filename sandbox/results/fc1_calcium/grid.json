@@ -1,0 +1,37 @@
+{
+ "base": {
+  "n_z": 1000,
+  "n_noise": 30,
+  "init": "lognormal",
+  "init_sigma": 2,
+  "init_scale": 1.89,
+  "init_clip": 1,
+  "lr_policy": 0.016,
+  "lr_td": 0.0035,
+  "lr_trace": 0.256,
+  "theta_0": 3,
+  "rule": "calcium",
+  "bound": "pre",
+  "ca_ltd_frac": 0.5,
+  "ca_gamma_d": 1.0,
+  "ca_beta": 2
+ },
+ "grid": {
+  "lr_bas": [
+   0.001,
+   0.002,
+   0.004,
+   0.008
+  ],
+  "ca_theta_p": [
+   1.5,
+   2.0
+  ],
+  "lr_ap": [
+   0.256,
+   0.512
+  ]
+ },
+ "seeds": 5,
+ "summary_only": true
+}

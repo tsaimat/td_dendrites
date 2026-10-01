@@ -51,7 +51,10 @@ def _worker(args):
         return name, seed, f"FAILED: {type(e).__name__}: {e}"
 
 
-def run_sweep(name: str, base: dict, grid: dict, seeds: int, workers: int, config_list: list[dict] = ()) -> Path:
+def run_sweep(name: str, base: dict, grid: dict, seeds: int, workers: int, config_list: list[dict] = (),
+              summary_only: bool = False) -> Path:
+    """summary_only: summarize every run as it arrives and keep no pickles (a slim 4000-trial seed at 1000 neurons is
+    about 65 MB, so 20-seed confirmation sweeps do not fit on the disk)."""
     out_dir = RESULTS_DIR / name
     out_dir.mkdir(parents=True, exist_ok=True)
     keys = list(grid)
@@ -67,31 +70,41 @@ def run_sweep(name: str, base: dict, grid: dict, seeds: int, workers: int, confi
     results = {n: [None] * seeds for n in configs}
     with Pool(workers) as pool:
         for i, (n, s, res) in enumerate(pool.imap_unordered(_worker, jobs), 1):
-            results[n][s] = res
+            results[n][s] = _slim(res) if summary_only else res
             print(f"\r  {i}/{len(jobs)} done ({n}, seed {s})", end='', flush=True)
             if isinstance(res, str):
                 print(f"\n  {n} seed {s} {res}")
     print()
 
-    for n in configs:
-        with open(out_dir / f"{n}.pickle", 'wb') as f:
-            pickle.dump(results[n], f, protocol=pickle.HIGHEST_PROTOCOL)
+    if not summary_only:
+        for n in configs:
+            with open(out_dir / f"{n}.pickle", 'wb') as f:
+                pickle.dump(results[n], f, protocol=pickle.HIGHEST_PROTOCOL)
     with open(out_dir / 'grid.json', 'w') as f:
-        json.dump({'base': base, 'grid': grid, 'seeds': seeds}, f, indent=1)
-    print_summary(write_summary(out_dir))
+        json.dump({'base': base, 'grid': grid, 'seeds': seeds, 'summary_only': summary_only}, f, indent=1)
+    rows = write_summary(out_dir, results) if summary_only else write_summary(out_dir)
+    print_summary(rows)
     return out_dir
 
 
-def write_summary(out_dir: Path) -> list[dict]:
-    """(Re)compute summary.csv of a sweep from its pickles (also usable after adding metrics to summarize())."""
+def _slim(res):
+    """Reduce a result to what write_summary needs (its hyperparameters and per-seed summary)."""
+    return res if isinstance(res, str) else {K_HP: res[K_HP], '_summary': summarize(res)}
+
+
+def write_summary(out_dir: Path, in_memory: dict = None) -> list[dict]:
+    """(Re)compute summary.csv of a sweep from its pickles (also usable after adding metrics to summarize()), or from
+    the in-memory {config: [result or slim result]} of a summary-only sweep."""
     rows = []
-    for p in sorted(out_dir.glob('*.pickle')):
-        with open(p, 'rb') as f:
-            results = pickle.load(f)
+    items = sorted(in_memory.items()) if in_memory is not None else [(p.stem, p) for p in sorted(out_dir.glob('*.pickle'))]
+    for stem, results in items:
+        if in_memory is None:
+            with open(results, 'rb') as f:
+                results = pickle.load(f)
         good = [r for r in results if not isinstance(r, str)]
         hp = next((r[K_HP] for r in good), {})
-        row = {'config': p.stem, **{k: hp.get(k) for k in DEFAULT_HP}, 'n_failed': len(results) - len(good)}
-        per_seed = [summarize(r) for r in good]
+        row = {'config': stem, **{k: hp.get(k) for k in DEFAULT_HP}, 'n_failed': len(results) - len(good)}
+        per_seed = [r['_summary'] if '_summary' in r else summarize(r) for r in good]
         for k in SUMMARY_KEYS:
             vals = np.array([s[k] for s in per_seed], dtype=float)
             row[k] = np.nanmean(vals) if np.any(~np.isnan(vals)) else np.nan
@@ -133,6 +146,7 @@ def main():
     ap.add_argument('--configs', default='[]', help='JSON list of override dicts (non-cartesian alternative to --grid)')
     ap.add_argument('--seeds', type=int, default=3)
     ap.add_argument('--workers', type=int, default=4)
+    ap.add_argument('--summary-only', action='store_true', help='keep no pickles, only summary.csv (see run_sweep)')
     a = ap.parse_args()
     base = {k: parse_value(v) for k, v in (kv.split('=', 1) for kv in a.set)}
     def load_json(arg: str):
@@ -143,7 +157,7 @@ def main():
     unknown -= set(DEFAULT_HP)
     if unknown:
         raise SystemExit(f"unknown hyperparameters: {sorted(unknown)}; known: {sorted(DEFAULT_HP)}")
-    run_sweep(a.name, base, grid, a.seeds, a.workers, config_list)
+    run_sweep(a.name, base, grid, a.seeds, a.workers, config_list, a.summary_only)
 
 
 if __name__ == '__main__':

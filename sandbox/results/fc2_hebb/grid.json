@@ -1,0 +1,31 @@
+{
+ "base": {
+  "n_z": 1000,
+  "n_noise": 30,
+  "init": "lognormal",
+  "init_sigma": 2,
+  "init_scale": 1.89,
+  "init_clip": 1,
+  "lr_policy": 0.016,
+  "lr_trace": 0.256,
+  "lr_td": 0.0035,
+  "theta_0": 3,
+  "rule": "hebb",
+  "bound": "soft",
+  "lr_ap": 0.512
+ },
+ "grid": {
+  "lr_bas": [
+   0.128,
+   0.256,
+   0.512
+  ],
+  "theta_bas_0": [
+   10,
+   12,
+   14
+  ]
+ },
+ "seeds": 10,
+ "summary_only": true
+}

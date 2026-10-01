@@ -1,0 +1,17 @@
+{
+ "base": {
+  "rule": "none",
+  "n_z": 1000,
+  "n_noise": 30,
+  "init": "lognormal",
+  "init_sigma": 2,
+  "init_scale": 1.89,
+  "init_clip": 1,
+  "lr_policy": 0.016,
+  "n_trials": 4000,
+  "n_trials_inhibited": 1800
+ },
+ "grid": {},
+ "seeds": 10,
+ "summary_only": true
+}

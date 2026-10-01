@@ -574,15 +574,77 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     code (64 percent unresponsive, 22 percent non-selective, 7 percent go, 7 percent no-go) with responses spread
     between 0 and +-9. At this population size the initial control already has 40 texture and 620 distractor
     detectors per 1000 neurons, and the rules mostly convert the graded middle into either detectors or silence.
-- Current state (2026-09-30, read this first; the "Open decision" and "Todo list" bullets below are from
-  September 25 to 29 and superseded): the base condition is 1000 neurons, 30 distractors, lognormal init
-  (`init_sigma` 2, per-neuron normalized, `init_scale` 1.89, `init_clip` 1), `theta_0` 4, `lr_policy` 0.016,
-  `lr_td` 0.0008, `lr_ap` 0.128, `lr_trace` 0.256 (control 1038 / 1090 trials, 1.7-fold drive margin). Tuned
-  rules at it: `hebb` soft 0.256 / threshold 8 (473 / 464), `bcm` soft 0.256 / tau 200 / e0 0.5 (427 / 414),
-  `calcium` pre 0.004 / 0.5 / 1.5 / 1.0 / beta 2 (639 / 431), all with `lr_ap` 0.128 and no divergence anywhere.
-  Figure sets and comparison plots for these four are committed under `sandbox/results/figures/`. The main code is
-  untouched. Next: the user picks the rule(s) for the figure, then port rule, init, population and rates into
-  `helper.py` / `simulate_seed()`, regenerate `results_bup.pickle` and the performance traces, design the panels.
+- Current state (2026-10-01, read this first; the "Open decision" and "Todo list" bullets below are from
+  September 25 to 29 and superseded): two control conditions at 1000 neurons, 30 distractors, lognormal init
+  (`init_sigma` 2, per-neuron normalized, `init_scale` 1.89, `init_clip` 1), `lr_policy` 0.016, `lr_trace` 0.256.
+  Slow (robust, 1.7-fold drive margin): `theta_0` 4, `lr_td` 0.0008, `lr_ap` 0.128 (control 1038 / 1090 trials by
+  the proxy) with `hebb` soft 0.256 / threshold 8 (473 / 464), `bcm` soft 0.256 / tau 200 / e0 0.5 (427 / 414),
+  `calcium` pre 0.004 / 0.5 / 1.5 / 1.0 / beta 2 (639 / 431), all `lr_ap` 0.128; figure sets `*2`. Fast (at the
+  divergence edge, no margin): `theta_0` 3, `lr_td` 0.0035, `lr_ap` 0.512 (control 306 / 372) with `hebb` soft
+  0.512 / threshold 10 (208 / 178), `bcm` soft 0.256 / tau 50 / e0 0.25 (220 / 197), `calcium` l1 0.001 / 0.5 /
+  2.0 / 2.0 / beta 2 (288 / 266), all `lr_ap` 0.512; figure sets `*3`. No divergence anywhere in either
+  condition. The two-condition summary is `sandbox/results/figures/speedup_slow_fast.png`. The main code is
+  untouched. Next: the user picks the rule(s) and condition for the figure, then port rule, init, population and
+  rates into `helper.py` / `simulate_seed()`, regenerate `results_bup.pickle` and the performance traces, design
+  the panels.
+- Fastest control at the same environment (user, 2026-10-01: "how good can the control be in principle", to test
+  whether the rules only pick up the inefficiency of a 1000-trial control; sweeps `o1_ctrl`, `o2_fine`, `o2_theta`,
+  `o2_trace`, `o3_long`, `o3_inh`, summaries only; `sweep.py --summary-only` was added because 20-seed 4000-trial
+  sweeps do not fit on the disk, a slim seed being about 65 MB): all rates and `theta_0` free, 1000 neurons, 30
+  distractors, lognormal init unchanged. The policy rate cannot be raised at this init: 0.032 is slower than 0.016,
+  0.064 loses seeds (final performance 0.79) and 0.128 or more never learns, so the slow policy is also the
+  fastest. The TD rate sets the speed and the divergence edge: at `theta_0` 4, `lr_ap` 0.256 (a faster apical rate
+  is more stable near the edge than 0.128), TD 0.005 learns in 375 trials (20 seeds over 4000 trials and 10 seeds in
+  the inhibition protocol, no divergence; 438 after the lift), TD 0.006 in 354 but loses 1 run of 30, 0.007 or more
+  diverges. `theta_0` 3 is faster (its edge is lower: TD 0.004 loses 2 to 8 of 30 runs, 0.005 diverges in 8 of
+  10, `theta_0` 2 diverges everywhere): `theta_0` 3, `lr_ap` 0.512, TD 0.0035, policy 0.016, trace 0.256 learns in
+  306 trials (20 seeds, 4000 trials, no divergence) and 372 after the lift (10 seeds, chance during inhibition),
+  3.4 times faster than the 1000-trial control; with `lr_ap` 0.256 the same rates lose 2 of 30 runs. The trace
+  rate (0.128 to 1.0) changes nothing. Chosen fast control: `theta_0` 3, `lr_ap` 0.512, `lr_td` 0.0035,
+  `lr_policy` 0.016, `lr_trace` 0.256 (figure set `results/figures/control3`, Smith expert 230 +- 56 trials,
+  267 after the lift). `figures.py` now skips the Tukey test of the phase boxplots when a learning phase has
+  fewer than two seeds (fast learners have an empty learning phase), which made two panels fail.
+- Rules at the fast control (2026-10-01; protocol as before: policy 0.016, TD 0.0035, trace 0.256, `theta_0` 3
+  fixed, `lr_ap`, `lr_bas`, bound and constants free; sweeps `fc1_*` (5 seeds), `fc2_hebb`, `fc2_rescue`, `fc2_ctrl4`,
+  `fc3_*` (10 seeds), `fc4_long` and `fc4_inh` (10 seeds, 4000 trials, confirmation), summaries only; the `fc` prefix
+  avoids the September `f*` sweep names of the 203-neuron pass). The slow
+  condition's finalists all diverge here: `bcm` (`bcm_e0_scale` 0.5) and `calcium` (`pre` bound, `ca_theta_p` 1.5,
+  `ca_gamma_d` 1.0) in every seed at every `lr_bas` from 0.001 (calcium) or 0.064 (bcm) upwards, `hebb` with
+  `theta_bas_0` 6 or 8 in every seed; the control sits at its TD divergence edge, so any rule that raises the drive
+  pushes it over. All three rules can be retuned so that they do not: more pruning for `hebb` (`theta_bas_0` 10 to
+  12; 9 diverges), a higher sliding threshold for `bcm` (`bcm_e0_scale` 0.25, `bcm_tau` 50; `bcm_tau` 100 or more
+  with 0.25 loses 1 to 10 of 10 seeds, 0.125 is stable but slower at 253 to 422), and for `calcium` the `l1` bound
+  with a higher LTP threshold and stronger depression (`ca_theta_p` 2, `ca_gamma_d` 2; `pre` and `soft` are at the
+  control's speed or diverge). Confirmed finalists (10 seeds, 4000 trials / 10 seeds after the lift, no divergence
+  in any run; control 307 / 372, chance during inhibition):
+  - `hebb` soft, `lr_bas` 0.512, `theta_bas_0` 10, `lr_ap` 0.512: 208 / 178 (ratio 0.85; 32 percent faster than
+    the control; `theta_bas_0` 11: 227 / 200). Prunes the total input per neuron to 0.77 and forms 14 tone, 49
+    texture and 578 distractor detectors.
+  - `bcm` soft, `lr_bas` 0.256, `bcm_tau` 50, `bcm_e0_scale` 0.25, `lr_ap` 0.512: 220 / 197 (0.90; 28 percent
+    faster; `lr_bas` 0.128: 245 / 206). Total input 0.97, 12 tone, 62 texture, 782 distractor detectors.
+  - `calcium` l1, `lr_bas` 0.001, `ca_ltd_frac` 0.5, `ca_theta_p` 2.0, `ca_gamma_d` 2.0, `ca_beta` 2, `lr_ap`
+    0.512: 288 / 266 (0.92; 6 percent faster); `lr_bas` 0.002 gives 274 / 352 with final performance 0.985 in the
+    inhibition protocol (5 texture detectors left after the blind trials), so 0.001 is the figure setting. It forms
+    no tone detectors and 28 texture detectors.
+  - Reading: at a control that is as fast as it can be without diverging, the pruning rules still cut the learning
+    time by about 30 percent (versus 60 to 65 percent at the 1000-trial control), calcium by 6 percent (versus 40
+    percent), and all of them need constants that keep the population drive below the control's: the rules' gain
+    is bounded by the TD estimator's stability, not by the control's inefficiency alone. At the second-fastest clean
+    control (`theta_0` 4, `lr_ap` 0.256, TD 0.005; 354 trials; sweep `fc2_ctrl4`) `hebb` at `theta_bas_0` 12 gives
+    273 and `bcm` at `bcm_e0_scale` 0.25 303, while the slow-condition finalists diverge there too.
+  - Figure sets `results/figures/{control3,hebb3,bcm3,calcium3}` (Smith expert trials, no inhibition / after the
+    lift, mean +- sd over 10 seeds, no divergence: control 230 +- 56 / 267 +- 85, hebb 136 +- 23 / 85 +- 24, bcm
+    148 +- 26 / 104 +- 22, calcium 213 +- 42 / 168 +- 38; the slow condition for comparison: control 952 / 1002,
+    hebb 394 / 232, bcm 346 / 337, calcium 564 / 357), comparison `compare_control3_hebb3_bcm3_calcium3` and
+    `fs12cd_wide_control3_...` (hebb and bcm again end with 92 to 94 percent unresponsive neurons and 2.5 to 3.5
+    percent go and no-go detectors, calcium with 75 percent unresponsive and a graded 7 percent go / 7 percent
+    no-go), and the two-condition summary `speedup_slow_fast.png` (`sandbox/speedup.py`: mean Smith performance
+    traces without inhibition and in the inhibition protocol, per-seed Smith expert trials without inhibition and
+    after the lift, for `control2`, `hebb2`, `bcm2`, `calcium2` versus the `*3` sets). By the Smith criterion the
+    speed-up at the fast control is 41 percent (hebb), 36 percent (bcm) and 7 percent (calcium) without inhibition
+    and 60 to 68 percent (hebb, bcm) and 37 percent (calcium) after the lift, versus 59 / 64 / 41 percent and 77 /
+    66 / 64 percent at the slow control. Every rule is faster after the lift than without inhibition at the fast
+    control (ratios 0.62 to 0.79; the control's is 1.16).
 - Open decision: the shared environment can be 203 neurons at `init_power` 12 (100 neurons also works for calcium but
   not for any gated rule). Calcium, `hebb` with `theta_bas_0` 16 and constant LTD with L1 (`rule` none, `lr_dep`
   0.016 `const`) are the settings that beat the control by a wide margin (pruning 392 to 547 trials, calcium 328
