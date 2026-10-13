@@ -92,6 +92,34 @@ unresponsive neurons and 3 percent go and 3 percent no-go one-hot detectors at m
 `calcium` keeps a graded code (7 percent go, 7 percent no-go selective, 64 to 75 percent unresponsive); the control
 keeps 42 percent texture-responsive with responses proportional to the initial basal selectivity.
 
+### Condition 4 (2026-10-06): control with recruitment, tuned to 1100 trials
+
+The slow control (`theta_0` 4) recruits almost no neurons: 1 percent of non-selective neurons become selective
+(manuscript mixed model: 13 percent), because its thresholds sit above the texture response of weakly driven
+neurons. The apparent loss of selective neurons in its fs12cd panel is a +-4 histogram-range artifact (gain 10
+pushes response differences to 9); the panel needs a wider range or a pie over all neurons. Condition 4 lowers
+`theta_0` and retunes the rates, scored with the real Smith estimator (`sandbox/smith.py` on the full series, as
+the pipeline does: inhibition protocol over all 4000 trials, minus 1800). Settings in
+`sandbox/results/s1_control4/finalists.json`, scan data (JSON lines per seed) in the same folder, scan scripts
+`sandbox/scan_smith.py`, `scan_table.py`, `scan_rtable.py`.
+
+- control4: `theta_0` 2.35, `lr_td` 0.00044, `lr_policy` 0.004, `lr_ap` 0.112, rest as above. Smith 1100 +- 259 /
+  1154 +- 198 (seeds 0-9), 1129 / 1166 (seeds 10-39), no seed lost, chance during inhibition. 7 percent of
+  non-selective and 3 percent of unresponsive neurons become selective (selective 13 to 22 percent), 25 percent at
+  full gain. The ~50-trial gap after the lift on seeds 0-9 comes from seeds 1, 4, 5 and survived every combination.
+- Lessons: TD rate sets the speed; `theta_0` sets recruitment and the full-gain count (2.0: 12 percent recruited,
+  36 to 46 percent full gain; 2.5: 4.5 percent; 3: 2 percent); TD 0.0005 or less at policy 0.016 loses 5 to 10
+  percent of seeds to an always-lick lock-in, policy 0.004 removes it; trace rate below 0.256 makes it worse.
+- Rule finalists on control4 (Smith, seeds 0-9 / seeds 10-39, no inhibition / after the lift, no divergence):
+  hebb4 (soft, `lr_bas` 0.512, `theta_bas_0` 7; 6 diverges) 406 / 330 and 406 / 341; bcm4 (soft, `lr_bas` 0.128,
+  `bcm_tau` 200, `bcm_e0_scale` 0.25; 0.3 or `bcm_tau` 300 diverge) 458 / 494 and 475 / 496; calcium4 (`pre`,
+  `lr_bas` 0.016, `ca_ltd_frac` 0.4, `ca_theta_p` 1.5, `ca_gamma_d` 2.0, `ca_beta` 2) 438 / 330 and 432 / 333.
+  hebb and bcm again end as sparse pruners (83 to 86 percent unresponsive); calcium keeps the control's
+  recruitment pattern (61 percent unresponsive, 24 percent selective). bcm at `bcm_tau` 50, `bcm_e0_scale` 0.5,
+  `lr_bas` 0.128 (475 / 542, one late seed) is the only bcm setting that keeps the recruitment.
+- Reference sets kept for the decision: control2 (above) and the 2026-10-02 candidate (`theta_0` 2.25, `lr_td`
+  0.0005, `lr_policy` 0.004, `lr_ap` 0.128; Smith 964 / 1066 on seeds 0-9, 8.6 percent recruited).
+
 ### Where things are
 
 - Exact settings per figure set: `sandbox/results/figures/<name>/hp.json`; the pickles there (`default.pickle`,
@@ -108,7 +136,8 @@ keeps 42 percent texture-responsive with responses proportional to the initial b
 
 ### Next: integration into the main code
 
-1. User picks the condition (slow or fast) and the rule(s) for the figure.
+1. User picks the condition (slow, fast or condition 4) and the rule(s) for the figure. Condition 4 has no figure
+   sets yet (`python -m sandbox.figures build <name> '<json from finalists.json>'`).
 2. Port into `helper.py` / `simulations.py`: population size, distractor count, lognormal init with its scale and
    clip, the per-rule learning rates (`lr_policy`, `lr_td`, `lr_ap`, `lr_trace` separate from `LR`), `theta_0`,
    the chosen rule with its bound and constants (and `theta_bas_0` for `hebb`), plus the control at the same

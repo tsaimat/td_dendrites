@@ -1,0 +1,18 @@
+{
+ "n_z": 1000,
+ "n_noise": 30,
+ "init": "lognormal",
+ "init_sigma": 2,
+ "init_norm": "neuron",
+ "init_scale": 1.89,
+ "init_clip": 1,
+ "lr_trace": 0.256,
+ "rule": "hebb",
+ "theta_0": 2.35,
+ "lr_td": 0.00044,
+ "lr_policy": 0.004,
+ "lr_ap": 0.112,
+ "bound": "soft",
+ "lr_bas": 0.512,
+ "theta_bas_0": 7
+}

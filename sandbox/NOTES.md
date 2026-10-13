@@ -630,3 +630,12 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
   `diag_gated*` / `diag_gh` scripts, the `theta_bas_0` and `oja_decay` columns in `sandbox/tab.py`, the README rows
   and these notes were added on 2026-09-25 to 29 and committed as ae1371b on 2026-09-29 (not pushed). Delete pickles of new
   exploratory sweeps once `summary.csv` exists (the disk was at 97 percent, 79 after this cleanup).
+- Condition 4 (2026-10-02 to 06): the slow control does not recruit neurons (1 percent of non-selective neurons
+  become selective versus 13 percent in the manuscript mixed model; no analysis criterion changes that, the fs12cd
+  decrease is a +-4 histogram-range artifact). Lowering `theta_0` restores recruitment; a Smith-scored scan
+  (`sandbox/scan_smith.py`, real pipeline definition, seeds 0-9 in both protocols, 50 configurations in three
+  stages, then 30 extra seeds) gives control4 (`theta_0` 2.35, `lr_td` 0.00044, `lr_policy` 0.004, `lr_ap` 0.112):
+  1100 / 1154 on seeds 0-9. Rules retuned on it in two fresh screens (62 configurations) plus inhibition runs and a
+  30-seed check: hebb4 406 / 330, bcm4 458 / 494, calcium4 438 / 330. Details and settings in CLAUDE.md and
+  `sandbox/results/s1_control4/`. Earlier numbers of 2026-10-02 that used the proxy or Smith on the post-lift trials
+  only are superseded.
