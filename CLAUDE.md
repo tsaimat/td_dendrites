@@ -161,12 +161,17 @@ the pipeline does: inhibition protocol over all 4000 trials, minus 1800). Settin
    `BU_HEBB`, `BU_BCM` and `BU_CALCIUM` with the rules, bounds (soft, soft, pre) and constants of `hebb4`, `bcm4`
    and `calcium4` (`sandbox/results/s1_control4/finalists.json`). Port the figure helpers the panels need
    (`store_full`, `sort_neurons`, `gain_at_preferred`).
-2. Runs: every BU rule in both protocols (without and with apical inhibition). The fast condition adds control3,
-   hebb3, bcm3 and calcium3, each in both protocols, for their own supplementary figure. Their settings are in
-   `sandbox/results/figures/<name>/hp.json`: `theta_0` 3, `lr_policy` 0.016, `lr_td` 0.0035, `lr_ap` 0.512, and
-   calcium3 uses the `l1` bound. Their parameters and result files must be separate, so that they change no other
-   figure. How to represent condition x rule x protocol (members, or arguments to `simulate_seeds` and `get_path`)
-   is open.
+2. Runs (user, 2026-10-13): three dimensions, 2 x 2 x 4 = 16 runs of 10 seeds.
+   - Protocol: without or with apical inhibition.
+   - Hyperparameters: biological (control4; everything in the main figures and the control4 rule figure) or fast
+     learning (control3; its own supplementary figure). The fast settings are in
+     `sandbox/results/figures/<name>/hp.json`: `theta_0` 3, `lr_policy` 0.016, `lr_td` 0.0035, `lr_ap` 0.512, the
+     rule constants of hebb3, bcm3 and calcium3, and the `l1` bound for calcium3.
+   - Rule: none, hebb, bcm or calcium.
+   Code organisation (approved): `DEFAULT` and `APICAL_INHIBITION` stay the two protocols without a rule, and
+   `BU_HEBB`, `BU_BCM` and `BU_CALCIUM` are new members. Inhibition (for the BU members) and fast learning are
+   options of `simulate_seeds` and `get_path` (and of the parameter lookup), which pick the parameters and the
+   result file. The fast runs must change no other figure.
 3. Matlab bookkeeping: `save_trial_outcomes_matlab()`, `load_smith_perf()` and `Smith/getperfs.m` (`lfilenames`,
    `perf_*`) get the new list of runs, in the same order (the mixed and bup entries go).
 4. Panels: `fs12a_performance_eg`, `fs12b_wap_traces`, `fs12b_theta0`, `fs12c_selectivity_traces` and

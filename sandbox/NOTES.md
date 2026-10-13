@@ -645,4 +645,6 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
   to S13 as well, `MIXED_SELECTIVITY` is deleted, and `BU_HEBB`, `BU_BCM` and `BU_CALCIUM` replace `BU_PLASTICITY`.
   Every BU rule also runs with apical inhibition. The fast condition (control3, hebb3, bcm3, calcium3, both
   protocols) gets its own supplementary figure without touching the others. The `theta_0` sweep is rerun around
-  control4, and fs12cd gets the range -10 to 10.
+  control4, and fs12cd gets the range -10 to 10. The runs form three dimensions (protocol, biological or fast
+  learning hyperparameters, rule), organised as `DEFAULT` / `APICAL_INHIBITION` plus three `BU_*` members, with
+  inhibition and fast learning as options of `simulate_seeds` and `get_path`.
