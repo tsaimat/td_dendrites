@@ -639,5 +639,5 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
   30-seed check: hebb4 406 / 330, bcm4 458 / 494, calcium4 438 / 330. Details and settings in CLAUDE.md and
   `sandbox/results/s1_control4/`. Earlier numbers of 2026-10-02 that used the proxy or Smith on the post-lift trials
   only are superseded. Figure sets `control4`, `hebb4`, `bcm4`, `calcium4` and the comparison figures were built on
-  2026-10-06; everything was committed and pushed as 3da2242 on 2026-10-13. The user found control4 good; the
-  choice of control and rule is open.
+  2026-10-06; everything was committed and pushed as 3da2242 on 2026-10-13. User decision (2026-10-13): control4
+  produces all the main figures, hebb4, bcm4 and calcium4 form a new supplementary figure; the port is next.

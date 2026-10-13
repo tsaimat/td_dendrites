@@ -49,6 +49,10 @@ main `l5apical` code is untouched since the `BU_PLASTICITY` scaffold was added: 
 basal threshold) and `results/results_bup.pickle`, `Smith/outcomes_bup.mat` and the `perf_bup` rows of
 `Smith/performances.mat` are stale no-op-equivalent data and must be regenerated after the port.
 
+Decisions (user, 2026-10-13): control4 (condition 4 below) is the final control and produces all the main figures;
+`hebb4`, `bcm4` and `calcium4`, the rules tuned on it, go into a new supplementary figure. The port is the next
+step. control4's ~50-trial gap after the lift on seeds 0-9 is accepted.
+
 ### Environment chosen (user decisions)
 
 - 1000 neurons (`n_z`), 30 distractors (`n_noise`), basal weights hard-constrained to [0, 1].
@@ -117,13 +121,13 @@ the pipeline does: inhibition protocol over all 4000 trials, minus 1800). Settin
   hebb and bcm again end as sparse pruners (83 to 86 percent unresponsive); calcium keeps the control's
   recruitment pattern (61 percent unresponsive, 24 percent selective). bcm at `bcm_tau` 50, `bcm_e0_scale` 0.5,
   `lr_bas` 0.128 (475 / 542, one late seed) is the only bcm setting that keeps the recruitment.
-- Reference sets kept for the decision: control2 (above) and the 2026-10-02 candidate (`theta_0` 2.25, `lr_td`
+- Reference sets the decision was made against: control2 (above) and the 2026-10-02 candidate (`theta_0` 2.25, `lr_td`
   0.0005, `lr_policy` 0.004, `lr_ap` 0.128; Smith 964 / 1066 on seeds 0-9, 8.6 percent recruited).
 - Figure sets `control4`, `hebb4`, `bcm4` and `calcium4` (built 2026-10-06, pushed as 3da2242 on 2026-10-13) and the
   comparisons `compare_control2_control4`, `fs12cd_wide_control2_control4`, `compare_control4_hebb4_bcm4_calcium4`,
   `fs12cd_wide_control4_hebb4_bcm4_calcium4`. The candidate has no figure set. Selectivity counts come from the
   `fs12cd_wide_*` figures; every set's own `fig_s12c_selectivity_distributions` panel still has the range artifact.
-  User verdict (2026-10-13): control4 "indeed looks good"; the final choice of control and rule is still open.
+  User decision (2026-10-13): control4 for all main figures, the three rules for a new supplementary figure.
 
 ### Where things are
 
@@ -144,22 +148,27 @@ the pipeline does: inhibition protocol over all 4000 trials, minus 1800). Settin
 
 ### Next: integration into the main code
 
-1. User picks the control and the rule(s) for the figure. The user's target: about 1100 trials to expert both
-   without inhibition and after the lift, close to each other on seeds 0-9, with visible recruitment and fewer
-   neurons at full gain than are responsive at the start. control4 meets it and the user likes it; the alternatives
-   are control2, the 2026-10-02 candidate (no figure set yet: `python -m sandbox.figures both <name> '<its json in
-   finalists.json>'`) and the fast control3. Rules on control4: `hebb4`, `bcm4`, `calcium4` (keeps the
-   recruitment) or the recruiting bcm variant.
-2. Port into `helper.py` / `simulations.py`: population size, distractor count, lognormal init with its scale and
-   clip, the per-rule learning rates (`lr_policy`, `lr_td`, `lr_ap`, `lr_trace` separate from `LR`), `theta_0`,
-   the chosen rule with its bound and constants (and `theta_bas_0` for `hebb`), plus the control at the same
-   environment as its own `Simulation` member (with and without apical inhibition, as the figure compares both
-   protocols). Keep the default and mixed models bit-identical (`python -m sandbox.check_reproduces`).
-3. Regenerate `results_bup.pickle` and the matching Matlab traces (`Smith/getperfs.m`, then `python main.py perf`),
-   or use the validated Python port `sandbox/smith.py`.
-4. Design the panels (performance traces and expert trials with and without inhibition, selectivity before and
-   after, detector counts; `sandbox/figures.py`, `selectivity.py` and `speedup.py` are the prototypes).
-5. Fix `fs12cd_selectivity_distribution` in `l5apical/panels.py`: its bins (`np.arange(-4, 4, 0.2)`, so -4 to 3.8)
-   drop every neuron outside that range from both the histogram and the pie. Widen the range (`fs12cd_wide` in
-   `sandbox/selectivity.py` uses +-10, the maximal gain) or count the pie over all neurons. Whether the manuscript's
-   own mixed-model panel loses neurons is unchecked (the `results/*.pickle` here are LFS pointers; `git lfs pull`).
+1. Decided (user, 2026-10-13): control4 produces all the main figures; `hebb4`, `bcm4` and `calcium4` (settings in
+   `sandbox/results/s1_control4/finalists.json`) form a new supplementary figure. To settle at the start of the
+   port: whether control4 replaces the model behind the current figure simulations (`DEFAULT`,
+   `APICAL_INHIBITION`, `MIXED_SELECTIVITY`) or joins them as new `Simulation` members, and whether "all the main
+   figures" includes the supplementary model panels S11 to S13 (with the `theta_0` sweep of `fs12b_theta0`, which
+   the sandbox figure sets skip).
+2. Port into `helper.py` / `simulations.py` (the next step): population size, distractor count, lognormal init with
+   its scale and clip, the separate learning rates (`lr_policy`, `lr_td`, `lr_ap`, `lr_trace` instead of the single
+   `LR`), `theta_0`, and the three rules (`hebb`, `bcm`, `calcium`) with the bounds and constants of `hebb4`, `bcm4`
+   and `calcium4` (`theta_bas_0` for `hebb`), each with and without apical inhibition, as the figures compare both
+   protocols. Until step 1 is settled, keep the default and mixed models bit-identical
+   (`python -m sandbox.check_reproduces`).
+3. Regenerate the results (`results_bup.pickle`, and every pickle whose model control4 replaces) and the matching
+   Matlab traces (`Smith/getperfs.m`, then `python main.py perf`), or use the validated Python port
+   `sandbox/smith.py`.
+4. Design the new supplementary figure (performance traces and expert trials with and without inhibition,
+   selectivity before and after, detector counts; `sandbox/figures.py`, `selectivity.py` and `speedup.py` are the
+   prototypes).
+5. Later (user, 2026-10-13): fix `fs12cd_selectivity_distribution` in `l5apical/panels.py`. Its bins
+   (`np.arange(-4, 4, 0.2)`, so -4 to 3.8) drop every neuron outside that range from both the histogram and the pie.
+   Widen the range (`fs12cd_wide` in `sandbox/selectivity.py` uses +-10, the maximal gain) or count the pie over all
+   neurons. Whether the manuscript's own mixed-model panel loses neurons is unchecked (the `results/*.pickle` here
+   are LFS pointers; `git lfs pull`).
+6. After the port (user, 2026-10-13): decide what happens to the 24 GB of local figure-set pickles.
