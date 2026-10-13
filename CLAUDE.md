@@ -40,7 +40,7 @@ To run one simulation type: `l5apical.simulations.simulate_seeds(Simulation.X)`;
 
 Adding a new simulation variant means: add an enum member in `Simulation`, a path in `get_path()`, parameter handling in `get_params()`, any per-trial branch in `simulate_seed()`, a call in `run()`, an entry in `save_trial_outcomes_matlab()` and `load_smith_perf()`, and a matching filename and `perf_*` variable in `Smith/getperfs.m`.
 
-## Work in progress (as of 2026-10-01)
+## Work in progress (as of 2026-10-13)
 
 Goal: a manuscript figure showing that apical top-down input can support bottom-up (basal) plasticity that speeds
 learning beyond the apical loop alone. The exploration was done in `sandbox/` (see `sandbox/README.md`); the
@@ -119,14 +119,22 @@ the pipeline does: inhibition protocol over all 4000 trials, minus 1800). Settin
   `lr_bas` 0.128 (475 / 542, one late seed) is the only bcm setting that keeps the recruitment.
 - Reference sets kept for the decision: control2 (above) and the 2026-10-02 candidate (`theta_0` 2.25, `lr_td`
   0.0005, `lr_policy` 0.004, `lr_ap` 0.128; Smith 964 / 1066 on seeds 0-9, 8.6 percent recruited).
+- Figure sets `control4`, `hebb4`, `bcm4` and `calcium4` (built 2026-10-06, pushed as 3da2242 on 2026-10-13) and the
+  comparisons `compare_control2_control4`, `fs12cd_wide_control2_control4`, `compare_control4_hebb4_bcm4_calcium4`,
+  `fs12cd_wide_control4_hebb4_bcm4_calcium4`. The candidate has no figure set. Selectivity counts come from the
+  `fs12cd_wide_*` figures; every set's own `fig_s12c_selectivity_distributions` panel still has the range artifact.
+  User verdict (2026-10-13): control4 "indeed looks good"; the final choice of control and rule is still open.
 
 ### Where things are
 
 - Exact settings per figure set: `sandbox/results/figures/<name>/hp.json`; the pickles there (`default.pickle`,
-  `perturbed.pickle`, about 2 GB per set, gitignored) were rebuilt on 2026-10-01 from the `hp.json` files and
-  reproduce the numbers above exactly (`python -m sandbox.figures build <name> "$(cat .../hp.json)"`; about 5 min per
-  set with 4 workers). Panels in `.../panels/` (PDF, SVG, PNG). Comparison figures `compare_*`, `fs12cd_wide_*`
-  and the two-condition summary `speedup_slow_fast.png` in `sandbox/results/figures/`.
+  `perturbed.pickle`, about 2 GB per set, 24 GB for the 12 sets, local only) were built from the `hp.json` files
+  (sets `*2` and `*3` rebuilt on 2026-10-01, sets `*4` on 2026-10-06) and reproduce the numbers above exactly
+  (`python -m sandbox.figures build <name> "$(cat .../hp.json)"`, then `plot <name>` for the panels, or `both`; about
+  5 min per set with 4 workers). Panels in `.../panels/` (PDF and PNG in git, SVG local). Comparison figures
+  `compare_*` and `fs12cd_wide_*` (`python -m sandbox.selectivity <set names>`, from the pickles) and the
+  two-condition summary `speedup_slow_fast.png` in `sandbox/results/figures/`. `sandbox/results/` is gitignored;
+  the files there that are in git were force-added (`git add -f`).
 - Sweep summaries kept (`summary.csv`, `grid.json`): `c10_*` to `c13_*` (control at 1000 neurons), `r5_*` (rules at
   the slow control), `o1_*` to `o3_*` (fastest control), `fc1_*` to `fc4_*` (rules at the fast control).
   `python -m sandbox.tab <name>` prints them. Everything from the 203-neuron passes was deleted (in git history).
@@ -136,8 +144,12 @@ the pipeline does: inhibition protocol over all 4000 trials, minus 1800). Settin
 
 ### Next: integration into the main code
 
-1. User picks the condition (slow, fast or condition 4) and the rule(s) for the figure. Condition 4 has no figure
-   sets yet (`python -m sandbox.figures build <name> '<json from finalists.json>'`).
+1. User picks the control and the rule(s) for the figure. The user's target: about 1100 trials to expert both
+   without inhibition and after the lift, close to each other on seeds 0-9, with visible recruitment and fewer
+   neurons at full gain than are responsive at the start. control4 meets it and the user likes it; the alternatives
+   are control2, the 2026-10-02 candidate (no figure set yet: `python -m sandbox.figures both <name> '<its json in
+   finalists.json>'`) and the fast control3. Rules on control4: `hebb4`, `bcm4`, `calcium4` (keeps the
+   recruitment) or the recruiting bcm variant.
 2. Port into `helper.py` / `simulations.py`: population size, distractor count, lognormal init with its scale and
    clip, the per-rule learning rates (`lr_policy`, `lr_td`, `lr_ap`, `lr_trace` separate from `LR`), `theta_0`,
    the chosen rule with its bound and constants (and `theta_bas_0` for `hebb`), plus the control at the same
@@ -147,3 +159,7 @@ the pipeline does: inhibition protocol over all 4000 trials, minus 1800). Settin
    or use the validated Python port `sandbox/smith.py`.
 4. Design the panels (performance traces and expert trials with and without inhibition, selectivity before and
    after, detector counts; `sandbox/figures.py`, `selectivity.py` and `speedup.py` are the prototypes).
+5. Fix `fs12cd_selectivity_distribution` in `l5apical/panels.py`: its bins (`np.arange(-4, 4, 0.2)`, so -4 to 3.8)
+   drop every neuron outside that range from both the histogram and the pie. Widen the range (`fs12cd_wide` in
+   `sandbox/selectivity.py` uses +-10, the maximal gain) or count the pie over all neurons. Whether the manuscript's
+   own mixed-model panel loses neurons is unchecked (the `results/*.pickle` here are LFS pointers; `git lfs pull`).
