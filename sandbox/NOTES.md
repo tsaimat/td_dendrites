@@ -641,3 +641,5 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
   only are superseded. Figure sets `control4`, `hebb4`, `bcm4`, `calcium4` and the comparison figures were built on
   2026-10-06; everything was committed and pushed as 3da2242 on 2026-10-13. User decision (2026-10-13): control4
   produces all the main figures, hebb4, bcm4 and calcium4 form a new supplementary figure; the port is next.
+  Port design (user, same day): control4 becomes the basis of `DEFAULT` and `APICAL_INHIBITION` and produces S11
+  to S13 as well, `MIXED_SELECTIVITY` is deleted, and `BU_HEBB`, `BU_BCM` and `BU_CALCIUM` replace `BU_PLASTICITY`.
