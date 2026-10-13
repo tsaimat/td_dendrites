@@ -50,10 +50,13 @@ basal threshold) and `results/results_bup.pickle`, `Smith/outcomes_bup.mat` and 
 `Smith/performances.mat` are stale no-op-equivalent data and must be regenerated after the port.
 
 Decisions (user, 2026-10-13): control4 (condition 4 below) is the final control. It becomes the basis of `DEFAULT`
-and `APICAL_INHIBITION`, so it produces all model figures, Fig. 4 and S11 to S13. `MIXED_SELECTIVITY` is deleted,
-because the new default replaces it. `BU_PLASTICITY` gives way to `BU_HEBB`, `BU_BCM` and `BU_CALCIUM`, with the
-settings of `hebb4`, `bcm4` and `calcium4`, for a new supplementary figure. The port is the next step (plan below).
-control4's ~50-trial gap after the lift on seeds 0-9 is accepted.
+and `APICAL_INHIBITION`, so it produces all model figures, Fig. 4 and S11 to S13; the `theta_0` sweep of S12b is
+rerun around control4. `MIXED_SELECTIVITY` is deleted, because the new default replaces it. `BU_PLASTICITY` gives
+way to `BU_HEBB`, `BU_BCM` and `BU_CALCIUM`, with the settings of `hebb4`, `bcm4` and `calcium4`, each with and
+without apical inhibition, for a new supplementary figure. The fast condition (control3 with hebb3, bcm3 and
+calcium3, both protocols) gets its own supplementary figure and must leave every other figure untouched. The
+selectivity distributions (fs12cd) get the range -10 to 10. The port is the next step (plan below). control4's
+~50-trial gap after the lift on seeds 0-9 is accepted.
 
 ### Environment chosen (user decisions)
 
@@ -155,26 +158,33 @@ the pipeline does: inhibition protocol over all 4000 trials, minus 1800). Settin
    (`lr_policy` 0.004, `lr_td` 0.00044, `lr_ap` 0.112, `lr_trace` 0.256 instead of the single `LR`) and `theta_0`
    2.35. Delete `MIXED_SELECTIVITY` (enum member, `get_path`, the `get_params` and `simulate_seed` branches, the
    `theta_0` loop in `run()`, `results/mixed_selectivity/`). Replace `BU_PLASTICITY` (and `N_Z_BU_PLASTICITY`) by
-   `BU_HEBB`, `BU_BCM` and `BU_CALCIUM` with the rules, bounds and constants of `hebb4`, `bcm4` and `calcium4`
-   (`sandbox/results/s1_control4/finalists.json`). The supplementary figure compares both protocols, so each rule
-   also needs the apical-inhibition protocol. Whether that is separate members or a protocol argument is still open.
-   Port the figure helpers the panels need (`store_full`, `sort_neurons`, `gain_at_preferred`).
-2. Matlab bookkeeping: `save_trial_outcomes_matlab()`, `load_smith_perf()` and `Smith/getperfs.m` (`lfilenames`,
-   `perf_*`) get the new list of simulations, in the same order (the mixed and bup entries go).
-3. Panels: `fs12a_performance_eg`, `fs12b_wap_traces`, `fs12b_theta0`, `fs12c_selectivity_traces` and
-   `fs12cd_selectivity_distribution` read `DEFAULT` instead of `MIXED_SELECTIVITY`. `fs12b_theta0` needs a
-   `theta_0` sweep of the new default. The range of `get_thetas_0()` (1 to 8) probably needs adapting at this init:
-   1.5 puts 91 percent of the neurons at full gain, and 4 recruits almost none.
-4. Verify: the ported runs must match the sandbox mirror at the `finalists.json` settings, bit-identically if the
-   random draws stay in the same order (repoint `sandbox/check_reproduces.py`, which compares at the old defaults).
-   The Smith expert trials must match condition 4 above (control4 1100 / 1154 on seeds 0-9).
-5. Regenerate every result: `python main.py simulate`, then `Smith/getperfs.m` or `sandbox/smith.py`, then
+   `BU_HEBB`, `BU_BCM` and `BU_CALCIUM` with the rules, bounds (soft, soft, pre) and constants of `hebb4`, `bcm4`
+   and `calcium4` (`sandbox/results/s1_control4/finalists.json`). Port the figure helpers the panels need
+   (`store_full`, `sort_neurons`, `gain_at_preferred`).
+2. Runs: every BU rule in both protocols (without and with apical inhibition). The fast condition adds control3,
+   hebb3, bcm3 and calcium3, each in both protocols, for their own supplementary figure. Their settings are in
+   `sandbox/results/figures/<name>/hp.json`: `theta_0` 3, `lr_policy` 0.016, `lr_td` 0.0035, `lr_ap` 0.512, and
+   calcium3 uses the `l1` bound. Their parameters and result files must be separate, so that they change no other
+   figure. How to represent condition x rule x protocol (members, or arguments to `simulate_seeds` and `get_path`)
+   is open.
+3. Matlab bookkeeping: `save_trial_outcomes_matlab()`, `load_smith_perf()` and `Smith/getperfs.m` (`lfilenames`,
+   `perf_*`) get the new list of runs, in the same order (the mixed and bup entries go).
+4. Panels: `fs12a_performance_eg`, `fs12b_wap_traces`, `fs12b_theta0`, `fs12c_selectivity_traces` and
+   `fs12cd_selectivity_distribution` read `DEFAULT` instead of `MIXED_SELECTIVITY`.
+   - `fs12b_theta0`: rerun the `theta_0` sweep around control4. The range of `get_thetas_0()` (1 to 8) probably
+     needs adapting at this init: 1.5 puts 91 percent of the neurons at full gain, and 4 recruits almost none.
+   - `fs12cd_selectivity_distribution`: range -10 to 10 (user). The current bins (`np.arange(-4, 4, 0.2)`, so -4 to
+     3.8) drop every neuron outside the range from both the histogram and the pie. The non-selective bins are found
+     by index (`nb2`, `nb2 + 1`), and symmetric edges from -10 to 10 shift them by one bin. `fs12cd_wide` in
+     `sandbox/selectivity.py` does it right: edges -10 to 10, values clipped into the range, pie over all neurons.
+5. Verify: the ported runs must match the sandbox mirror at the `finalists.json` and `*3` `hp.json` settings,
+   bit-identically if the random draws stay in the same order (repoint `sandbox/check_reproduces.py`, which compares
+   at the old defaults). The Smith expert trials must match the finalists above (control4 1100 / 1154 and control3
+   230 / 267 on seeds 0-9).
+6. Regenerate every result: `python main.py simulate`, then `Smith/getperfs.m` or `sandbox/smith.py`, then
    `python main.py perf` and `plot`.
-6. Design the new supplementary figure: performance traces and expert trials in both protocols, selectivity before
-   and after, detector counts. The prototypes are `sandbox/figures.py`, `selectivity.py` and `speedup.py`.
-7. Update this file's architecture and data sections, the README and the `clean` branch.
-8. Later (user, 2026-10-13): fix `fs12cd_selectivity_distribution`. Its bins (`np.arange(-4, 4, 0.2)`, so -4 to
-   3.8) drop every neuron outside that range from both the histogram and the pie. control4's responses differ by up
-   to 9, so the new S12 panels need the fix: widen the range (`fs12cd_wide` in `sandbox/selectivity.py` uses +-10,
-   the maximal gain) or count the pie over all neurons.
+7. Design the two new supplementary figures (the rules at control4, and the fast condition): performance traces and
+   expert trials in both protocols, selectivity before and after, detector counts. The prototypes are
+   `sandbox/figures.py`, `selectivity.py` and `speedup.py`.
+8. Update this file's architecture and data sections, the README and the `clean` branch.
 9. After the port (user, 2026-10-13): decide what happens to the 24 GB of local figure-set pickles.

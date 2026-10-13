@@ -643,3 +643,6 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
   produces all the main figures, hebb4, bcm4 and calcium4 form a new supplementary figure; the port is next.
   Port design (user, same day): control4 becomes the basis of `DEFAULT` and `APICAL_INHIBITION` and produces S11
   to S13 as well, `MIXED_SELECTIVITY` is deleted, and `BU_HEBB`, `BU_BCM` and `BU_CALCIUM` replace `BU_PLASTICITY`.
+  Every BU rule also runs with apical inhibition. The fast condition (control3, hebb3, bcm3, calcium3, both
+  protocols) gets its own supplementary figure without touching the others. The `theta_0` sweep is rerun around
+  control4, and fs12cd gets the range -10 to 10.
