@@ -10,7 +10,6 @@ from pickle import load
 from scipy import stats
 from l5apical.parula import PARULA
 from l5apical.helper import *
-from l5apical.simulations import get_params
 
 # Colors
 COL_SENSORY = "#2985C4"
@@ -51,19 +50,21 @@ BIN_MAX = 6  # Maximal bin ID for histogram
 END_T = OUTCOME_T + 2  # Time step up to which to plot
 
 
-def get_results(simulation: Simulation = Simulation.DEFAULT, expert_aligned: bool = False, theta_0: float = THETA_0
-                ) -> list[dict]:
+def get_results(simulation: Simulation = Simulation.DEFAULT, expert_aligned: bool = False, theta_0: float = None,
+                fast: bool = False, inhibition: bool = False) -> list[dict]:
     """
     Align simulation outcomes to the trials at which the simulated agents crossed the expertise thresholds
     :param simulation: Enum identifier of the simulation type
     :param expert_aligned: Whether to align trials to the first expert trial
-    :param theta_0: Value of the theta_o parameter (only relevant for mixed selectivity simulations)
+    :param theta_0: Value of the theta_0 parameter (only for the theta_0 sweep of the default simulation)
+    :param fast: Whether to load the simulation with the hyperparameters of the fast-learning regime
+    :param inhibition: Whether to load the simulation with apical inhibition (only for bottom-up plasticity simulations)
     :return: results dictionary with values aligned to expert times
     """
-    with open(get_path(simulation=simulation, theta_0=theta_0), 'rb') as handle:
+    with open(get_path(simulation=simulation, fast=fast, inhibition=inhibition, theta_0=theta_0), 'rb') as handle:
         results = load(handle)
     if expert_aligned:
-        n_trials = get_params(simulation=simulation, theta_0=theta_0)[8]
+        n_trials = get_n_trials(simulation=simulation, inhibition=inhibition)
         expert_t = [int(results[s][K_EXPERT_T]) for s in range(N_SEEDS)]
         before_expert = min(expert_t)
         after_expert = n_trials - max(expert_t)
@@ -1196,7 +1197,7 @@ def fs12a_performance_eg(saving: bool = True) -> None:
     Plot an example performance trace for the default simulation
     :param saving: boolean encoding whether to save (or just display) the plot.
     """
-    plot_perf_eg(saving=saving, mean=False, sim=Simulation.MIXED_SELECTIVITY, save_name='fig_s12a_performance_example')
+    plot_perf_eg(saving=saving, mean=False, sim=Simulation.DEFAULT, save_name='fig_s12a_performance_example')
 
 
 def fs12b_wap_traces(saving: bool = False):
@@ -1214,7 +1215,7 @@ def fs12b_wap_traces(saving: bool = False):
     set_style()
     fig, axs = plt.subplots(nrows=2, ncols=1, figsize=(PANEL_WIDTH, PANEL_HEIGHT))
     trials = torch.linspace(1, N_TRIALS, steps=N_TRIALS)
-    results = get_results(simulation=Simulation.MIXED_SELECTIVITY)
+    results = get_results(simulation=Simulation.DEFAULT)
     for s in range(len(s_idxs)):
         w_aps = {}
         for result in results:
@@ -1273,7 +1274,7 @@ def fs12b_theta0(saving: bool = False) -> None:
     n_bins = BIN_MAX + 1
     w_ap_final_mean = torch.empty((ns, n_theta, n_available_bins))
     for t in range(n_theta):
-        results = get_results(simulation=Simulation.MIXED_SELECTIVITY, theta_0=theta_0[t])
+        results = get_results(simulation=Simulation.DEFAULT, theta_0=theta_0[t])
         for s in range(ns):
             w_ap_final = {}
             for result in results:
@@ -1286,7 +1287,7 @@ def fs12b_theta0(saving: bool = False) -> None:
                         w_ap_final[b] += [result[K_W_AP][-1, i]]
 
             for b in range(len(w_ap_final)):
-                w_ap_final_mean[s, t, b] = np.mean(w_ap_final[b])
+                w_ap_final_mean[s, t, b] = float(np.mean(w_ap_final[b]))
 
     y_ticks = [i / 5 for i in range(6)]
     y_tick_labels: list = ['' for _ in range(6)]
@@ -1304,7 +1305,7 @@ def fs12b_theta0(saving: bool = False) -> None:
         axs[k].spines[['right', 'top']].set_visible(False)
         axs[k].spines['left'].set_bounds(0, 1)
         axs[k].spines['bottom'].set_bounds(theta_0[0], theta_0[-1])
-        axs[k].set_xticks(get_thetas_0())
+        axs[k].set_xticks([t for t in theta_0 if t == round(t)])
         axs[k].set_yticks(y_ticks, y_tick_labels)
         axs[k].set_xlabel(r'$\theta_0$')
 
@@ -1329,7 +1330,7 @@ def fs12c_selectivity_traces(saving: bool = False) -> None:
     fig, axs = plt.subplots(nrows=1, ncols=1, figsize=(PANEL_WIDTH, PANEL_HEIGHT))
     bin_max = 8
     n_bins = 2 * bin_max + 1
-    results = get_results(simulation=Simulation.MIXED_SELECTIVITY)
+    results = get_results(simulation=Simulation.DEFAULT)
     x_s1 = nan_array((N_SEEDS, N_TRIALS, N_Z))
     x_s2 = nan_array((N_SEEDS, N_TRIALS, N_Z))
     bin_idxs = {}
@@ -1374,7 +1375,9 @@ def fs12c_selectivity_traces(saving: bool = False) -> None:
     axs.set_xlabel('Trial')
     axs.set_xlim([0, N_TRIALS / batch_size])
     axs.spines[['right', 'top']].set_visible(False)
-    axs.spines['left'].set_bounds(-4, 4)
+    axs.set_ylim([-1.15 * MAX_GAIN, 1.05 * MAX_GAIN])  # Selectivities reach +-MAX_GAIN once the apical gain is maximal
+    axs.set_yticks([-MAX_GAIN, -MAX_GAIN / 2, 0, MAX_GAIN / 2, MAX_GAIN])
+    axs.spines['left'].set_bounds(-MAX_GAIN, MAX_GAIN)
 
     adjust_figure(fig=fig, h_space=0.1)
     save_or_show(saving=saving, plot_dir=PLOT_DIR, plot_name='fig_s12c_selectivity_traces')
@@ -1389,7 +1392,7 @@ def fs12cd_selectivity_distribution(saving: bool = False) -> None:
     """
 
     set_style()
-    results = get_results(simulation=Simulation.MIXED_SELECTIVITY)
+    results = get_results(simulation=Simulation.DEFAULT)
     x_s1 = nan_array((N_SEEDS, N_TRIALS, N_Z))
     x_s2 = nan_array((N_SEEDS, N_TRIALS, N_Z))
     txt_responsive = []
@@ -1405,9 +1408,10 @@ def fs12cd_selectivity_distribution(saving: bool = False) -> None:
             if np.mean(results[s][K_X_SOM_TXT][:, i]) > tr_threshold:
                 txt_responsive += [[s, i]]
     nn = N_SEEDS * N_Z
-    bin_edges = np.arange(-4, 4, 0.2)
+    x_max = MAX_GAIN  # Selectivities reach +-MAX_GAIN once the apical gain is maximal
+    bin_edges = np.linspace(-x_max, x_max, int(round(2 * x_max / 0.2)) + 1)
     n_bins = len(bin_edges) - 1
-    nb2 = int(n_bins / 2)
+    nb2 = int(n_bins / 2) - 1
     unselective_bins = [nb2, nb2+1]
     s2_bins = list(range(nb2))
     s1_bins = list(range(nb2 + 2, n_bins))
@@ -1430,7 +1434,7 @@ def fs12cd_selectivity_distribution(saving: bool = False) -> None:
         else:
             av_s1 = np.nanmean(x_s1[:, phase[i][0]:phase[i][1], :], axis=1)
             av_s2 = np.nanmean(x_s2[:, phase[i][0]:phase[i][1], :], axis=1)
-        data = (av_s1 - av_s2).flatten()
+        data = np.clip((av_s1 - av_s2).flatten(), bin_edges[0] + 0.1, bin_edges[-1] - 0.1)  # Count every neuron
         counts, _, patches = axs[i].hist(data, bins=bin_edges)
         for b in s1_bins:
             patches[b].set_facecolor(COL_T1)
@@ -1452,7 +1456,7 @@ def fs12cd_selectivity_distribution(saving: bool = False) -> None:
         axs[i].yaxis.set_major_formatter(ticks_y)
         axs[i].set_xlabel('$x^{som}(go)-x^{som}(no-go)}$')
         axs[i].spines[['right', 'top']].set_visible(False)
-        axs[i].set_xlim([-4, 4])
+        axs[i].set_xlim([-x_max, x_max])
         axs[i].set_ylim([0, 0.15 * nn])
         axs[i].set_yticks([0.05 * i * nn for i in range(4)])
 
@@ -1460,7 +1464,8 @@ def fs12cd_selectivity_distribution(saving: bool = False) -> None:
     p2 = matplotlib.patches.Patch(color=COL_T2, label='no-go selective')
     p3 = matplotlib.patches.Patch(color=color_unselective, label='non-selective')
     p4 = matplotlib.patches.Patch(color=color_unresponsive, label='unresponsive', lw=AXIS_WIDTH, ec='k')
-    axs[1].legend(handles=[p1, p2, p3, p4], handlelength=1, loc='upper right', frameon=False)
+    axs[1].legend(handles=[p1, p2, p3, p4], handlelength=1, loc='lower right', bbox_to_anchor=(1.03, 0.08),
+                  borderaxespad=0., frameon=False)
 
     adjust_figure(fig=fig, h_space=0.1)
     save_or_show(saving=saving, plot_dir=PLOT_DIR, plot_name='fig_s12c_selectivity_distributions')
@@ -1494,7 +1499,7 @@ def plot_all(saving: bool = True) -> None:
     fs11bc_transfer_f(saving=saving)  # Transfer functions
     fs11d_expert_v_pred(saving=saving)  # Expert V pred trace for FA trials
     fs11e_apical_dendrites_raster_plots(saving=saving)  # S1 apical activity raster plot for FA
-    fs12a_performance_eg(saving=saving)  # Performance example for mixed selectivity simulation
+    fs12a_performance_eg(saving=saving)  # Performance example for default simulation
     fs12b_wap_traces(saving=saving)  # Evolution of apical synaptic weights
     fs12b_theta0(saving=saving)  # Dependence on the theta_0 parameter
     fs12c_selectivity_traces(saving=saving)  # Evolution of the selectivity with learning
@@ -1518,7 +1523,7 @@ if __name__ == '__main__':
     fs11bc_transfer_f(saving=saving)  # Transfer functions
     fs11d_expert_v_pred(saving=saving)  # Expert V pred trace for FA trials
     fs11e_apical_dendrites_raster_plots(saving=saving)  # S1 apical activity raster plot for FA
-    fs12a_performance_eg(saving=saving)  # Performance example for mixed selectivity simulation
+    fs12a_performance_eg(saving=saving)  # Performance example for default simulation
     fs12b_wap_traces(saving=saving)  # Evolution of apical synaptic weights
     fs12b_theta0(saving=saving)  # Dependence on the theta_0 parameter
     fs12c_selectivity_traces(saving=saving)  # Evolution of the selectivity with learning

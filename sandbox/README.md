@@ -22,7 +22,7 @@ the `l5apical` package. Delete this directory when done; nothing outside it depe
 | `selectivity.py` | `python -m sandbox.selectivity control hebb bcm calcium`: side-by-side comparison of how each rule changes the basal and somatic selectivity relative to the control (from the figure pickles) |
 | `speedup.py` | `python -m sandbox.speedup slow:control2,hebb2,bcm2,calcium2 fast:control3,hebb3,bcm3,calcium3`: summary figure of the speed-up by each rule in one or more control conditions (mean Smith performance traces without inhibition and in the inhibition protocol, per-seed Smith expert trials without inhibition and after the lift), from the figure pickles |
 | `scan_smith.py`, `scan_table.py`, `scan_rtable.py` | Smith-scored scans (condition 4): `python -m sandbox.scan_smith <out.jsonl> '<json {name: overrides}>' [seeds, e.g. 0-9] [both, fresh or inh]` runs every configuration and seed in the protocols asked for, overrides on top of the 2026-10-02 candidate (`BASE`), parallel and resumable, one JSON line per run (Smith expert trial on the full series as in the pipeline, final performance, divergence, selectivity transitions, full-gain count); `python -m sandbox.scan_table <files> [--seeds=0-9]` ranks configurations by the distance of both expert times to 1100 and to each other, `python -m sandbox.scan_rtable <files>` tabulates rules |
-| `check_reproduces.py` | asserts the mirror is bit-identical to the main code for `DEFAULT`, `APICAL_INHIBITION` and `BU_PLASTICITY` |
+| `check_reproduces.py` | asserts that the ported main code is bit-identical to the mirror at the settings of the figure sets `control4`, `hebb4`, `bcm4`, `calcium4` (biological regime) and `control3`, `hebb3`, `bcm3`, `calcium3` (fast regime), without and with apical inhibition, on short runs; the sandbox defaults keep the constants of the main code before the port (`LR`, `THETA`, `N_Z` 203, `THETA_0` 4, pinned in `simulate.py`) |
 
 Run everything in the repository's own conda env `tdd`, built as the top-level README describes
 (`conda create -n tdd python=3.10.8`, then `pip install -r requirements.txt`; python at `~/miniconda3/envs/tdd/bin/python`).
@@ -31,7 +31,7 @@ Do not use other envs on the machine.
 ## Usage
 
 ```
-python -m sandbox.check_reproduces            # run after any change to simulate.py or the main trial loop
+python -m sandbox.check_reproduces            # run after any change to simulate.py or the main trial loop (ported code vs mirror)
 python -m sandbox.sweep --name rules --set init_power=12 --grid '{"rule": ["burst", "us", "bcm"], "bound": ["soft", "l1"], "lr_bas": [0.016, 0.064]}' --seeds 5 --workers 8
 python -m sandbox.sweep --name rules_inh --set init_power=12 n_trials=4000 n_trials_inhibited=1800 --grid '{"rule": ["burst", "us"]}' --seeds 5
 python -m sandbox.sweep --name baseline_default --set rule=none init=identity n_noise=200 --seeds 5   # the paper's default model

@@ -26,7 +26,7 @@ Install the required libraries
 pip install -r requirements.txt
 ```
 
-In order to rerun the full pipeline of simulations yourself and replot all the panels, you will also need a functioning version of Matlab (script was tested with R2022b). The Matlab script will be necessary to extract the performance traces from the simulations. Without Matlab, you will still be able to plot the pre-simulated results used for the paper (and any panel not requiring the performance traces using the results that you simulated yourself).
+Matlab is not needed: the performance traces are extracted with a Python port of the method of Smith et al. (2004). The original Matlab scripts are kept in the folder `Smith` (tested with R2022b) and can be used instead.
 
 ### Execution
 
@@ -35,14 +35,19 @@ Before rerunning the simulations, you can test whether the installation was succ
 python main.py plot
 ```
 
-This will plot all the panels (to the folder `panels`) with the existing simulation results. This is possible as the `main` branch contains pre-simulated results in the `results` folder, which are ~1.5GB. If you want to avoid downloading these files and simulate them yourself, you can clone the `clean` branch instead of the `main` branch. To rerun all the simulations (except the extraction of the performance trace), enter
+This will plot all the panels (to the folder `panels`) with the existing simulation results. This is possible as the `main` branch contains pre-simulated results in the `results` folder, which are ~7GB and stored with [Git LFS](https://git-lfs.com) (install it before cloning). If you want to avoid downloading these files and simulate them yourself, you can clone the `clean` branch instead of the `main` branch. To rerun all the simulations, enter
 ```
 python main.py simulate
 ```
 
-This will overwrite any simulation outcomes present in the `results` folder. The `results` folder will then contain all the simulation results except for the performance traces, which are pre-computed in the folder `Smith`. In order to extract the performance traces necessary for some panels yourself, you will have to then run `Smith/getperfs.m` with Matlab. Once the Matlab script is finished you can run
+This will overwrite any simulation outcomes present in the `results` folder (about an hour on an 8-core machine, most of it for the extraction of the performance traces, which runs in parallel on all available cores). The simulations end by saving the trial outcomes to `Smith/outcomes_*.mat`, extracting the performance traces with the Python port of the code from Smith et al. (2004) into `Smith/performances.mat` and integrating them into the pickle files in the `results` folder, after which all of the panels can be replotted. To extract the performance traces again, enter
 ```
 python main.py perf
 ```
 
-This should integrate the performances extracted by the code from Smith et al. (2004) into the pickle files in the `results` folder and will allow you to replot all of the panels. If any step is interrupted or skipped, the results files can become corrupted and can only be recovered by rerunning the simulation from the start or downloading the uncorrupted results from the github repository. In case you do not have Matlab installed and nothing was changed in the simulation code, it is also possible to skip the last step. Both the `main` and `clean` branch already contain the extracted performance traces for the default simulations. The code will therefore be able to reuse those files.
+To use the original Matlab code instead, run `Smith/getperfs.m` with Matlab after the simulations (it reads the same `Smith/outcomes_*.mat` and overwrites `Smith/performances.mat`) and then enter
+```
+python main.py perf matlab
+```
+
+If any step is interrupted or skipped, the results files can become corrupted and can only be recovered by rerunning the simulation from the start or downloading the uncorrupted results from the github repository.

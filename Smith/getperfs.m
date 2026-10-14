@@ -1,15 +1,22 @@
+% Extract the performance traces, learning trials and expert trials of every simulation run from the trial outcomes in
+% outcomes_<name>.mat with the method of Smith et al. (2004) and save them to performances.mat. The order of the runs
+% must match get_runs() in l5apical/helper.py, which indexes the rows of expert_t and learning_t. The Python port in
+% l5apical/smith.py does the same without Matlab (python main.py perf).
 nrseeds = 10;
 maxres = 1;
 corprob = 0.5;
-lfilenames = ["outcomes_default.mat", "outcomes_apical_inhibition.mat", 'outcomes_mixed.mat', 'outcomes_bup.mat'];
-nrfiles = length(lfilenames);
+names = ["default", "apical_inhibition", "hebb", "hebb_apical_inhibition", "bcm", "bcm_apical_inhibition", ...
+         "calcium", "calcium_apical_inhibition", "fast_default", "fast_apical_inhibition", "fast_hebb", ...
+         "fast_hebb_apical_inhibition", "fast_bcm", "fast_bcm_apical_inhibition", "fast_calcium", ...
+         "fast_calcium_apical_inhibition"];
+nrfiles = length(names);
 expert_t = zeros(nrfiles, nrseeds);
 learning_t = zeros(nrfiles, nrseeds);
+performances = struct();
 
 for f = 1:nrfiles
-    load(lfilenames(f))
+    load("outcomes_" + names(f) + ".mat")
     n_trials = size(correct_trials, 2);
-    x = 0:n_trials;
     perf_traces = zeros(nrseeds, n_trials+1);
     for s = 1:nrseeds
         disp({f, s})
@@ -18,15 +25,9 @@ for f = 1:nrfiles
         learning_t(f, s) = t_learn;
         perf_traces(s,:) = pmid;
     end
-    if f == 1
-        perf_default = perf_traces;
-    elseif f == 2
-        perf_apical_inhibition = perf_traces;
-    elseif f == 3
-        perf_mixed = perf_traces;
-    elseif f == 4
-        perf_bup = perf_traces;
-    end
+    performances.("perf_" + names(f)) = perf_traces;
 end
 
-save("performances.mat", "expert_t", "learning_t" ,"perf_apical_inhibition", "perf_default", "perf_mixed", "perf_bup")
+performances.expert_t = expert_t;
+performances.learning_t = learning_t;
+save("performances.mat", "-struct", "performances")

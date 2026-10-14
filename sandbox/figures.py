@@ -60,11 +60,10 @@ def build(name: str, hp: dict, seeds: int = N_SEEDS, workers: int = 4) -> None:
 def plot(name: str, skip: tuple = ('fs12b_theta0',)) -> None:
     import l5apical.panels as P
     out = FIG_DIR / name
-    paths = {Simulation.DEFAULT: out / 'default.pickle', Simulation.MIXED_SELECTIVITY: out / 'default.pickle',
-             Simulation.APICAL_INHIBITION: out / 'perturbed.pickle'}
-    n_trials = {Simulation.DEFAULT: N_TRIALS, Simulation.MIXED_SELECTIVITY: N_TRIALS, Simulation.APICAL_INHIBITION: N_TRIALS_AP_INH}
-    P.get_path = lambda simulation=Simulation.DEFAULT, theta_0=THETA_0: paths[simulation]
-    P.get_params = lambda simulation=Simulation.DEFAULT, theta_0=THETA_0: (None,) * 8 + (n_trials[simulation],)
+    paths = {Simulation.DEFAULT: out / 'default.pickle', Simulation.APICAL_INHIBITION: out / 'perturbed.pickle'}
+    n_trials = {Simulation.DEFAULT: N_TRIALS, Simulation.APICAL_INHIBITION: N_TRIALS_AP_INH}
+    P.get_path = lambda simulation=Simulation.DEFAULT, **kwargs: paths[simulation]
+    P.get_n_trials = lambda simulation=Simulation.DEFAULT, **kwargs: n_trials[simulation]
     P.N_Z = pickle.load(open(out / 'default.pickle', 'rb'))[0][K_W_AP].shape[1]  # the panels loop over N_Z neurons
     P.PLOT_DIR = out / 'panels'
     P.PLOT_DIR.mkdir(parents=True, exist_ok=True)

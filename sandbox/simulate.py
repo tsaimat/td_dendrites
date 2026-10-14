@@ -10,6 +10,16 @@ import numpy as np
 import torch
 from l5apical.helper import *
 from l5apical.simulations import Agent
+
+# Constants of the main code before the port of 2026-10-13, to which the sandbox defaults refer (the port replaced the
+# common learning rate LR by separate rates, the identity model by the lognormal init with 1000 neurons, and THETA_0 4 by
+# the values of the two learning regimes in helper.HYPERPARAMETERS)
+LR = 0.016
+THETA = 0.1
+N_Z = 203
+THETA_0 = 4.
+N_Z_BU_PLASTICITY = 30
+K_Z = 'z'  # result key of the eligibility trace, which the slim main-code results no longer store
 from sandbox.rules import RULES, RULE_HP, apply_bound
 
 # Default hyperparameters. Everything a sweep may vary lives here.
