@@ -44,9 +44,12 @@ PLOT_DIR = ROOT_DIR / "panels"
 SVG_DIR = 'svg'
 
 # Processing initializations
+N_BEFORE_EXPERT = 500  # Number of trials before the expert trial to plot
 N_EXPERTS = 150  # Number of expert trials to plot
 N_AV_BIN = 20  # Number of available bins for histograms
 BIN_MAX = 6  # Maximal bin ID for histogram
+RESPONSIVE_THRESHOLD = 0.1  # Mean somatic activity in the texture window above which a neuron is texture-responsive
+N_PHASE_TRIALS = 100  # Number of trials over which the responses before and after learning are averaged
 END_T = OUTCOME_T + 2  # Time step up to which to plot
 
 
@@ -64,20 +67,61 @@ def get_results(simulation: Simulation = Simulation.DEFAULT, expert_aligned: boo
     with open(get_path(simulation=simulation, fast=fast, inhibition=inhibition, theta_0=theta_0), 'rb') as handle:
         results = load(handle)
     if expert_aligned:
-        n_trials = get_n_trials(simulation=simulation, inhibition=inhibition)
-        expert_t = [int(results[s][K_EXPERT_T]) for s in range(N_SEEDS)]
-        before_expert = min(expert_t)
-        after_expert = n_trials - max(expert_t)
-        sample_ranges = [[expert_t[s] - before_expert, expert_t[s] + after_expert] for s in range(N_SEEDS)]
         for s in range(N_SEEDS):
+            expert_t = int(results[s][K_EXPERT_T])
             for k in [K_LEARNING_T, K_EXPERT_T]:
-                results[s][k] = results[s][k] - expert_t[s] + before_expert
-            for k in KEYS_1D:
-                results[s][k] = results[s][k][sample_ranges[s][0]:sample_ranges[s][1]]
-            for k in KEYS_2D:
-                results[s][k] = results[s][k][sample_ranges[s][0]:sample_ranges[s][1], :]
+                results[s][k] = results[s][k] - expert_t + N_BEFORE_EXPERT
+            for k in KEYS_1D + KEYS_2D:
+                results[s][k] = align_to_expert(values=results[s][k], expert_t=expert_t)
 
     return results
+
+
+def align_to_expert(values: np.ndarray, expert_t: int) -> np.ndarray:
+    """
+    Get the values of the N_BEFORE_EXPERT trials before the expert trial and of the N_EXPERTS trials from it on, nan for
+    the trials outside the simulation
+    :param values: array of values with the trials along the first dimension
+    :param expert_t: expert trial
+    :return: array of the N_BEFORE_EXPERT + N_EXPERTS trials aligned to the expert trial
+    """
+    first = expert_t - N_BEFORE_EXPERT
+    aligned = np.full((N_BEFORE_EXPERT + N_EXPERTS,) + values.shape[1:], np.nan)
+    start, stop = max(first, 0), min(expert_t + N_EXPERTS, len(values))
+    aligned[start - first:stop - first] = values[start:stop]
+    return aligned
+
+
+def get_texture_responsive(result: dict, trials: tuple[int, int] = (0, N_PHASE_TRIALS)) -> np.ndarray:
+    """
+    Get the texture-responsive neurons, whose mean somatic activity in the texture window over a range of trials is above
+    RESPONSIVE_THRESHOLD
+    :param result: results dictionary of one seed (not aligned)
+    :param trials: first trial and last trial plus one of the range
+    :return: boolean array encoding whether each neuron is texture-responsive
+    """
+    return np.array([np.mean(result[K_X_SOM_TXT][trials[0]:trials[1], i]) > RESPONSIVE_THRESHOLD for i in range(N_Z)])
+
+
+def get_sensory_dendrites(result: dict, neurons: np.ndarray) -> np.ndarray:
+    """
+    Get the activity of the sensory dendrites at each time step of each trial, averaged over a group of neurons and
+    computed from the recorded sensory dendrite synaptic weights and pre-synaptic inputs the way the simulation records
+    it for the go and no-go neurons (before the outcome with the values at the start of the trial)
+    :param result: results dictionary of one seed (not aligned)
+    :param neurons: boolean array or indices of the neurons
+    :return: array (trials x time steps) of the mean sensory dendrite activity
+    """
+    outcome_t = OUTCOME_T - TONE_T
+    w_ap = torch.tensor(result[K_W_AP][:, neurons], dtype=torch.float64)
+    x_pre = torch.tensor(result[K_TIMINGS])
+    activity = nan_array((len(x_pre), N_TIME_STEPS))
+    activity[0, :outcome_t] = apical_transfer(torch.tensor(0.)).item()  # The pre-synaptic inputs start at zero
+    activity[1:, :outcome_t] = torch.mean(apical_transfer(x_pre[:-1, :outcome_t, None] * w_ap[:-1, None, :]),
+                                          dim=2).numpy()
+    activity[:, outcome_t] = torch.mean(apical_transfer(x_pre[:, outcome_t, None] * w_ap), dim=1).numpy()
+    activity[result[K_DENDRITE_OUTCOME] == 0, outcome_t] = 0.  # Trials with the outcome-time apical activity silenced
+    return activity
 
 
 def get_outcome_specific(outcome: Outcome, outcomes: type[np.ndarray | list[np.ndarray]],
@@ -133,10 +177,10 @@ def get_texture_specific(texture: bool, outcomes: type[np.ndarray | list[np.ndar
     if isinstance(outcomes, list) and isinstance(values, list):
         if vs[0].ndim == 1:
             for s in range(len(outcomes)):
-                vs[s][outcomes[s] in bad_outcomes] = np.nan
+                vs[s][np.isin(outcomes[s], bad_outcomes)] = np.nan
         elif vs[0].ndim == 2:
             for s in range(len(outcomes)):
-                vs[s][outcomes[s] in bad_outcomes, :] = np.nan
+                vs[s][np.isin(outcomes[s], bad_outcomes), :] = np.nan
         else:
             raise NotImplementedError(vs[0].ndim)
 
@@ -526,7 +570,7 @@ def plot_apical_raster(outcome: Outcome, expert_aligned: bool = False) -> None:
     p_cmap = get_performance_cm(reverse=True)
     if expert_aligned:
         y_ticks = [-400, -200, 0]
-        n_trials = 500 + N_EXPERTS
+        n_trials = N_BEFORE_EXPERT + N_EXPERTS
         t_min, t_max = 1 - n_trials + N_EXPERTS, N_EXPERTS
     else:
         y_ticks = [0, 500, 1000, 1500]
@@ -588,18 +632,23 @@ def plot_apical_raster(outcome: Outcome, expert_aligned: bool = False) -> None:
     adjust_figure(fig=fig, h_space=0.05)
 
 
-def plot_apical_trace_boxplot(saving=True, verbose: bool = False, outcome: Outcome = None) -> None:
+def plot_apical_trace_boxplot(saving=True, verbose: bool = False, outcome: Outcome = None, y_lim: float = 1.01,
+                              y_ticks: tuple[float, ...] = (0., 0.5, 1.)) -> None:
     """
     Evolution of apical activity with learning during different trial windows and for each dendrite type as well as
     box-plots of activity depending on the learning phase and statistical significance between phases. The figure can be
-    produced for specific trial outcome types (Hits, Misses, CRs or FAs) or for all trials (outcome=None).
+    produced for specific trial outcome types (Hits, Misses, CRs or FAs) or for all trials (outcome=None). The sensory
+    dendrites are those of the neurons that are texture-responsive in the first N_PHASE_TRIALS trials (as in a random
+    sample of L5 neurons), the outcome dendrites receive the same input in every neuron.
     :param saving: boolean encoding whether to save (or just display) the plot.
     :param verbose: whether to print out p-values
     :param outcome: the outcome type to plot the traces for. If None, all trial types are included.
+    :param y_lim: upper limit of the apical activity axis of the traces
+    :param y_ticks: ticks of the apical activity axis of the traces
     """
     # Initializations
     batch_size = 50
-    nt = min(N_TRIALS, 500 + N_EXPERTS)
+    nt = min(N_TRIALS, N_BEFORE_EXPERT + N_EXPERTS)
     p_cmap = get_performance_cm()
     cb_width = 0.05
     window_labels = ("Cue", "Touch", "Outcome")
@@ -636,24 +685,33 @@ def plot_apical_trace_boxplot(saving=True, verbose: bool = False, outcome: Outco
     sub_figs = fig.subfigures(1, 2, width_ratios=[3, 1.5], wspace=0.07)
     axs = sub_figs[0].subplots(nrows=n_branches, ncols=1)
 
-    # Get data for plotting
+    # Get data for plotting (the sensory dendrites need the trials before the expert alignment)
     trials = np.zeros(0)
-    rs = get_results(expert_aligned=True)
-    apical_sensory = [rs[s][K_DENDRITE_SENSORY] for s in range(n_seeds)]
-    apical_outcome = [rs[s][K_DENDRITE_OUTCOME] for s in range(n_seeds)]
+    rs = get_results(expert_aligned=False)
+    apical_sensory_all = [get_sensory_dendrites(result=r, neurons=get_texture_responsive(result=r)) for r in rs]
+    apical_outcome_all = [r[K_DENDRITE_OUTCOME] for r in rs]
+    outcomes_all = [r[K_OUTCOME] for r in rs]
 
-    if outcome is not None:
-        outcomes = [rs[s][K_OUTCOME] for s in range(n_seeds)]
-        apical_sensory = get_outcome_specific(outcome=outcome, outcomes=outcomes, values=apical_sensory)
-        apical_outcome = get_outcome_specific(outcome=outcome, outcomes=outcomes, values=apical_outcome)
+    def get_window_activity(expert_aligned: bool) -> np.ndarray:
+        if expert_aligned:
+            select = [lambda v, t=int(r[K_EXPERT_T]): align_to_expert(values=v, expert_t=t) for r in rs]
+        else:
+            select = [lambda v: v for _ in rs]
+        apical_sensory = [select[s](apical_sensory_all[s]) for s in range(n_seeds)]
+        apical_outcome = [select[s](apical_outcome_all[s]) for s in range(n_seeds)]
+        if outcome is not None:
+            outcomes = [select[s](outcomes_all[s]) for s in range(n_seeds)]
+            apical_sensory = get_outcome_specific(outcome=outcome, outcomes=outcomes, values=apical_sensory)
+            apical_outcome = get_outcome_specific(outcome=outcome, outcomes=outcomes, values=apical_outcome)
+        y_out = np.array([apical_transfer(torch.zeros(n_seeds, len(apical_outcome[0]))).numpy(),
+                          apical_transfer(torch.zeros(n_seeds, len(apical_outcome[0]))).numpy(),
+                          apical_outcome])
+        y_sen = np.array([[apical_sensory[s][:, 0] for s in range(n_seeds)],
+                          [apical_sensory[s][:, TEXTURE_T - TONE_T] for s in range(n_seeds)],
+                          [apical_sensory[s][:, -1] for s in range(n_seeds)]])
+        return np.stack([y_out, y_sen], axis=0)
 
-    y_out = np.array([apical_transfer(torch.zeros(n_seeds, len(apical_outcome[0]))).numpy(),
-                      apical_transfer(torch.zeros(n_seeds, len(apical_outcome[0]))).numpy(),
-                      apical_outcome])
-    y_sen = np.array([[apical_sensory[s][:, 0] for s in range(n_seeds)],
-                      [apical_sensory[s][:, TEXTURE_T - TONE_T] for s in range(n_seeds)],
-                      [apical_sensory[s][:, -1] for s in range(n_seeds)]])
-    ys = np.stack([y_out, y_sen], axis=0)
+    ys = get_window_activity(expert_aligned=True)
 
     # Plot traces with standard error
     for dendrite_type in range(n_branches):
@@ -675,16 +733,16 @@ def plot_apical_trace_boxplot(saving=True, verbose: bool = False, outcome: Outco
         cb.set_ticks([])
 
         # Expert line
-        axs[dendrite_type].vlines(x=0, ymin=0, ymax=1, color='k', linestyle='--', linewidth=AXIS_WIDTH)
+        axs[dendrite_type].vlines(x=0, ymin=0, ymax=y_ticks[-1], color='k', linestyle='--', linewidth=AXIS_WIDTH)
 
         # Axis and labeling
         axs[dendrite_type].set_xlim([trials[0], trials[-1]])
-        axs[dendrite_type].set_ylim([-0.05, 1.01])
+        axs[dendrite_type].set_ylim([-0.05, y_lim])
         axs[dendrite_type].spines[['top', 'right']].set_visible(False)
         axs[dendrite_type].set_xticks([-500, -400, -300, -200, -100, 0, 100], ['', '-400', '', '-200', '', '0', '100'])
-        axs[dendrite_type].set_yticks([0, 0.5, 1.])
-        axs[dendrite_type].set_yticklabels([0., 0.5, 1.])
-        axs[dendrite_type].spines['left'].set_bounds(0, 1.)
+        axs[dendrite_type].set_yticks(y_ticks)
+        axs[dendrite_type].set_yticklabels(y_ticks)
+        axs[dendrite_type].spines['left'].set_bounds(0, y_ticks[-1])
         axs[dendrite_type].set_ylabel('Apical activity')
         axs[dendrite_type].set_title(branch_names[dendrite_type], color=title_col[dendrite_type])
         if dendrite_type == n_branches - 1:
@@ -692,23 +750,10 @@ def plot_apical_trace_boxplot(saving=True, verbose: bool = False, outcome: Outco
             axs[1].legend(loc='upper left', frameon=False)
         else:
             axs[dendrite_type].set_xticklabels([])
-            axs[dendrite_type].text(0 - 0.03 * (trials[-1] - trials[0]), 0.95, outcome_label, ha='right')
+            axs[dendrite_type].text(0 - 0.03 * (trials[-1] - trials[0]), 0.95 * y_ticks[-1], outcome_label, ha='right')
 
     # Get the unaligned data
-    rs = get_results(expert_aligned=False)
-    apical_sensory = [rs[s][K_DENDRITE_SENSORY] for s in range(n_seeds)]
-    apical_outcome = [rs[s][K_DENDRITE_OUTCOME] for s in range(n_seeds)]
-    if outcome is not None:
-        outcomes = [rs[s][K_OUTCOME] for s in range(n_seeds)]
-        apical_sensory = get_outcome_specific(outcome=outcome, outcomes=outcomes, values=apical_sensory)
-        apical_outcome = get_outcome_specific(outcome=outcome, outcomes=outcomes, values=apical_outcome)
-    y_out = np.array([apical_transfer(torch.zeros(n_seeds, len(apical_outcome[0]))).numpy(),
-                      apical_transfer(torch.zeros(n_seeds, len(apical_outcome[0]))).numpy(),
-                      apical_outcome])
-    y_sen = np.array([[apical_sensory[s][:, 0] for s in range(n_seeds)],
-                      [apical_sensory[s][:, TEXTURE_T - TONE_T] for s in range(n_seeds)],
-                      [apical_sensory[s][:, -1] for s in range(n_seeds)]])
-    ys = np.stack([y_out, y_sen], axis=0)
+    ys = get_window_activity(expert_aligned=False)
 
     # Init the boxplot subfigure
     sub_sub_figs = sub_figs[1].subfigures(2, 1)
@@ -830,7 +875,7 @@ def f4e_soma_raster_plots(saving: bool = True, expert_aligned: bool = False):
     batch_size = 50
     if expert_aligned:
         y_ticks = [-400, -200, 0]
-        n_trials = 500 + N_EXPERTS
+        n_trials = N_BEFORE_EXPERT + N_EXPERTS
         t_min, t_max = 1 - n_trials + N_EXPERTS, N_EXPERTS
     else:
         y_ticks = [0, 500, 1000, 1500]
@@ -895,7 +940,6 @@ def f4e_soma_raster_plots(saving: bool = True, expert_aligned: bool = False):
 def f4f_sen_dendrite(saving: bool = True, expert_aligned: bool = False) -> None:
     """
     Multi-panel plot showing:
-    - Evolution of the pre-synaptic input to sensory dendrites across learning as raster plot
     - Evolution of the sensory dendrite synaptic weight strengths depending on the bottom-up (basal) selectivity of the
       pyramidal neurons (with learning)
     - Evolution of the multiplicative gains of different stimuli with learning
@@ -905,7 +949,7 @@ def f4f_sen_dendrite(saving: bool = True, expert_aligned: bool = False) -> None:
 
     # Initializations and loading data
     if expert_aligned:
-        n_trials = 500 + N_EXPERTS
+        n_trials = N_BEFORE_EXPERT + N_EXPERTS
         t_min, t_max = 1 - n_trials + N_EXPERTS, N_EXPERTS
     else:
         n_trials = N_TRIALS
@@ -914,18 +958,11 @@ def f4f_sen_dendrite(saving: bool = True, expert_aligned: bool = False) -> None:
     batch_size = 50
     n_batches = n_trials // batch_size
     set_style()
-    cmap = get_parula_cm()
-    cmap.set_bad(color='k')
     p_cmap = get_performance_cm(reverse=True)
     cb_width = 0.043
 
-    # Raster plot of the sensory dendrite pre-synaptic input (which learns to predict |Delta V|)
-    data = np.nanmean(np.array([results[s][K_TIMINGS] for s in range(N_SEEDS)]), axis=0)
+    # Figure with the learning progression as a colorbar along the trial axis of each panel
     fig, axs = plt.subplots(nrows=2, ncols=1, figsize=(PANEL_WIDTH, 8 / INCH), sharey='all')
-    mean_data = np.zeros((n_batches, N_TIME_STEPS))
-    if batch_size > 1:
-        for b in range(n_batches):
-            mean_data[b, :] = np.nanmean(data[b * batch_size:(b + 1) * batch_size, :], axis=0)
     for i in range(2):
         c_map_ax = axs[i].inset_axes([-cb_width, 0, cb_width, 1], zorder=-10)
         cb = matplotlib.colorbar.ColorbarBase(c_map_ax, cmap=p_cmap, orientation='vertical')
@@ -937,7 +974,7 @@ def f4f_sen_dendrite(saving: bool = True, expert_aligned: bool = False) -> None:
     # Plot traces of the sensory dendrite synapse strengths and of the pyramidal neuron gains
     trials = np.linspace(t_min, t_max, n_batches, endpoint=True)
     plot_cols = [COL_PRE, COL_T1, COL_T2, COL_DISTRACTOR]
-    idxs = [0, 1, 2, np.arange(3, N_Z)]
+    idxs = [0, T1_IDX, T2_IDX, np.arange(3, N_Z)]  # The neurons are relabeled so that T1_IDX is the go neuron
     axes = (0, 0, 0, (0, 2))
     keys = [K_W_AP, K_GAIN]
     x_ticks = [[0, 0.5, 1], [0, 2, 4, 6, 8, 10]]
@@ -974,11 +1011,12 @@ def f4f_sen_dendrite(saving: bool = True, expert_aligned: bool = False) -> None:
 
 def f4g_apical_window_traces(saving=True, verbose: bool = False) -> None:
     """
-    Evolution of apical activity with learning during different trial windows and for each dendrite type.
+    Evolution of apical activity with learning during different trial windows and for each dendrite type (the sensory
+    dendrites of the neurons that are texture-responsive in the first trials).
     :param saving: boolean encoding whether to save (or just display) the plot.
     :param verbose: whether to print out p-values
     """
-    plot_apical_trace_boxplot(saving=saving, verbose=verbose)
+    plot_apical_trace_boxplot(saving=saving, verbose=verbose, y_lim=0.9, y_ticks=(0., 0.4, 0.8))
 
 
 def f4h_performance(saving=True) -> None:
@@ -1395,8 +1433,6 @@ def fs12cd_selectivity_distribution(saving: bool = False) -> None:
     results = get_results(simulation=Simulation.DEFAULT)
     x_s1 = nan_array((N_SEEDS, N_TRIALS, N_Z))
     x_s2 = nan_array((N_SEEDS, N_TRIALS, N_Z))
-    txt_responsive = []
-    tr_threshold = 0.1
     for s in range(N_SEEDS):
         x_s1[s, :, :] = get_texture_specific(
             texture=True, outcomes=results[s][K_OUTCOME], values=results[s][K_X_SOM_TXT]
@@ -1404,9 +1440,6 @@ def fs12cd_selectivity_distribution(saving: bool = False) -> None:
         x_s2[s, :, :] = get_texture_specific(
             texture=False, outcomes=results[s][K_OUTCOME], values=results[s][K_X_SOM_TXT]
         )
-        for i in range(N_Z):
-            if np.mean(results[s][K_X_SOM_TXT][:, i]) > tr_threshold:
-                txt_responsive += [[s, i]]
     nn = N_SEEDS * N_Z
     x_max = MAX_GAIN  # Selectivities reach +-MAX_GAIN once the apical gain is maximal
     bin_edges = np.linspace(-x_max, x_max, int(round(2 * x_max / 0.2)) + 1)
@@ -1415,25 +1448,16 @@ def fs12cd_selectivity_distribution(saving: bool = False) -> None:
     unselective_bins = [nb2, nb2+1]
     s2_bins = list(range(nb2))
     s1_bins = list(range(nb2 + 2, n_bins))
-    n_ts = 100
-    phase = [[0, n_ts], [N_TRIALS - n_ts, N_TRIALS]]
+    phase = [[0, N_PHASE_TRIALS], [N_TRIALS - N_PHASE_TRIALS, N_TRIALS]]
     n_phases = len(phase)
     fig, axs = plt.subplots(nrows=1, ncols=n_phases, figsize=(n_phases*PANEL_WIDTH, PANEL_HEIGHT))
     color_unresponsive = 'white'
     color_unselective = COL_DISTRACTOR
     for i in range(n_phases):
-        txt_responsive = []
-        for s in range(N_SEEDS):
-            for j in range(N_Z):
-                if np.mean(results[s][K_X_SOM_TXT][phase[i][0]:phase[i][1], j]) > tr_threshold:
-                    txt_responsive += [[s, j]]
-
-        if tr_threshold is not None:
-            av_s1 = np.array([np.nanmean(x_s1[tr[0], phase[i][0]:phase[i][1], tr[1]]) for tr in txt_responsive])
-            av_s2 = np.array([np.nanmean(x_s2[tr[0], phase[i][0]:phase[i][1], tr[1]]) for tr in txt_responsive])
-        else:
-            av_s1 = np.nanmean(x_s1[:, phase[i][0]:phase[i][1], :], axis=1)
-            av_s2 = np.nanmean(x_s2[:, phase[i][0]:phase[i][1], :], axis=1)
+        txt_responsive = [[s, j] for s in range(N_SEEDS)
+                          for j in np.flatnonzero(get_texture_responsive(result=results[s], trials=phase[i]))]
+        av_s1 = np.array([np.nanmean(x_s1[tr[0], phase[i][0]:phase[i][1], tr[1]]) for tr in txt_responsive])
+        av_s2 = np.array([np.nanmean(x_s2[tr[0], phase[i][0]:phase[i][1], tr[1]]) for tr in txt_responsive])
         data = np.clip((av_s1 - av_s2).flatten(), bin_edges[0] + 0.1, bin_edges[-1] - 0.1)  # Count every neuron
         counts, _, patches = axs[i].hist(data, bins=bin_edges)
         for b in s1_bins:

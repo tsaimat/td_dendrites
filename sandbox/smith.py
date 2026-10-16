@@ -119,13 +119,16 @@ def run_analysis(responses, max_response: int = 1, background_prob: float = 0.5,
     return t_learn, t_expert, pmid, p05
 
 
-if __name__ == '__main__':  # validate against the Matlab output shipped with the repository
+if __name__ == '__main__':  # validate against the Matlab output of the original manuscript simulations
+    # The Matlab scripts and their output were removed from the repository on 2026-10-14; extract the two files from git
+    # history first: git show 39ec02a:Smith/performances.mat > <dir>/performances.mat (same for outcomes_default.mat)
     import sys, time
+    from pathlib import Path
     from scipy.io import loadmat
-    from l5apical.helper import SMITH_DIR
-    perf = loadmat(SMITH_DIR / 'performances.mat')
-    out = loadmat(SMITH_DIR / 'outcomes_default.mat')
-    n_check = int(sys.argv[1]) if len(sys.argv) > 1 else 3
+    smith_dir = Path(sys.argv[1])
+    perf = loadmat(smith_dir / 'performances.mat')
+    out = loadmat(smith_dir / 'outcomes_default.mat')
+    n_check = int(sys.argv[2]) if len(sys.argv) > 2 else 3
     for s in range(n_check):
         t0 = time.time()
         t_learn, t_expert, pmid, p05 = run_analysis(out['correct_trials'][s])

@@ -1,6 +1,6 @@
 """Smith-scored scan. Each job = (config, seed, protocol). Expert trials follow the pipeline exactly: sandbox.smith.run_analysis
 (validated port of runanalysisv3.m) on the full correct-trial series (NaN trials of diverged runs count as errors), expert
-trial minus 1 as in load_smith_perf; after-lift value = that minus N_TRIALS. One JSON line per job, appended as jobs finish.
+trial minus 1 as in the main code; after-lift value = that minus N_TRIALS. One JSON line per job, appended as jobs finish.
 Usage: python -m sandbox.scan_smith <out.jsonl> '<json {name: hp overrides}>' [seeds, e.g. 0-9] [protocols: both|fresh|inh]"""
 import json, sys, os
 from multiprocessing import Pool

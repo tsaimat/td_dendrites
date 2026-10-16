@@ -1,18 +1,15 @@
 """
 Module containing the code to simulate learning of a go/no-go sensory discrimination task by a mouse agent with and
 without top-down salience signal onto apical dendrites of pyramidal neurons, with and without bottom-up (basal)
-plasticity. The simulation outcomes are saved in pickle files in the 'results' directory. The performance traces are
-then extracted with the method of Smith et al. (2004), either by its Python port in l5apical.smith
-(compute_smith_perf()) or by the Matlab script Smith/getperfs.m, and integrated into the pickle files by
-load_smith_perf().
+plasticity. The performance trace and the learning and expert trials of every simulated seed are extracted with the
+method of Smith et al. (2004) (helper.smith_analysis), and the simulation outcomes are saved in pickle files in the
+'results' directory.
 """
 from multiprocessing import Pool
 from random import seed as rd_seed
 from random import shuffle as random_shuffle
 from pickle import load, dump, HIGHEST_PROTOCOL
-from scipy.io import savemat, loadmat
 from l5apical.helper import *
-from l5apical.smith import run_analysis
 
 
 class Agent:
@@ -260,7 +257,6 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
     outcomes, correct_trials, den_out = tuple(nan_array((n_trials,)) for _ in range(3))
     d_sen_tx, d_sen_t1, d_sen_t2, x_pre_t_h, td_delta_h = tuple(nan_array((n_trials, n_timings)) for _ in range(5))
     w_ap_h, gain_h, x_som_texture_h = tuple(nan_array((n_trials, n_z), dtype=np.float32) for _ in range(3))
-    z_h = np.zeros((n_trials, n_z))
     v_hat_h = np.zeros((n_trials, 1 + n_timings))
     snapshot_ts = sorted(set(list(range(0, n_trials, SNAPSHOT_EVERY)) + [n_trials - 1]))  # Trials of w_bas snapshots
     w_bas_h = np.zeros((len(snapshot_ts), n_inputs, n_z), dtype=np.float32)
@@ -282,6 +278,7 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
         input_time_idxs[:][basal_input < 0.5] = n_timings  # Timings of zero-inputs are set after the end of the trial
 
         # Storage variables
+        z = np.zeros(n_z)  # Eligibility trace of the somatic activity during the trial
         dv_hat_before = torch.tensor([0.])  # State value change estimate at t-1
         v_hat_h[j, 0] = dv_hat_before.numpy()
         d_sen_tx[j, :outcome_t] = torch.mean(apical_transfer(torch.outer(x_pre_t, w_ap[tx_idxs])), dim=1)
@@ -303,7 +300,7 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
             dv_hat_now = torch.dot(dw_weights, x_som)  # Estimate state value change
 
             # Update state value estimator, sensory dendrite afferent, sensory dendrite and basal synaptic weights
-            dw_weights += learning_rate * dv_hat_now * z_h[j, :] * K_V
+            dw_weights += learning_rate * dv_hat_now * z * K_V
             w_ap = torch.clamp(w_ap + lr_ap * x_pre_t[t] * (x_som - thetas) * (1 - w_ap) * w_ap, min=0, max=1)
             if bu_plasticity:
                 dw = basal_rule(simulation=simulation, x_in=x_in, x_som=x_som, x_ap=x_ap, hp=hp, rule_state=rule_state)
@@ -311,7 +308,7 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
             x_pre_t[t] += tlr * (abs(dv_hat_now.item()) - x_pre_t[t])
 
             # Store variables of interest
-            z_h[j, :] = GAMMA * z_h[j, :] + x_som.numpy()  # - BKG
+            z = GAMMA * z + x_som.numpy()  # - BKG
             v_hat_h[j, 1 + t] = v_hat_h[j, t] / GAMMA + dv_hat_now.numpy()
             td_delta_h[j, t] = GAMMA * dv_hat_now
             driven = x_in[preferred] > 0  # Neurons whose preferred stimulus is present
@@ -361,7 +358,7 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
             dw = basal_rule(simulation=simulation, x_in=torch.zeros(n_inputs), x_som=x_som, x_ap=x_ap.expand(n_z),
                             hp=hp, rule_state=rule_state)
             w_bas = bound_basal_weights(w_bas=w_bas, dw=dw, bound=hp['bound'], row_sums=row_sums, col_sums=col_sums)
-        dw_weights += learning_rate * (reward - r_pred) * z_h[j, :] * (x_som - BKG)
+        dw_weights += learning_rate * (reward - r_pred) * z * (x_som - BKG)
         actor.update(reward=reward.item(), x_som=x_som)
 
         # Record variables of interest for post-simulation analysis
@@ -382,7 +379,7 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
             w_bas_h[snapshot_ts.index(j)] = w_bas.numpy()
 
         # Update weights according to TD error elicited by resetting value estimate to zero at the end of the trial
-        dw_weights += - learning_rate * torch.tensor(v_hat_h[j, outcome_t+1] * z_h[j, :]).float() * K_V
+        dw_weights += - learning_rate * torch.tensor(v_hat_h[j, outcome_t+1] * z).float() * K_V
 
     # Stash all recorded simulation outcomes of interest into a single dictionary for saving
     result = {K_OUTCOME: outcomes,
@@ -406,14 +403,45 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
     return result
 
 
-def simulate_seeds(simulation: Simulation, fast: bool = False, inhibition: bool = False, theta_0: float = None):
+def get_performance(correct_trials: np.ndarray) -> dict:
     """
-    Simulate multiple runs of the sensory discrimination task
+    Extract the performance trace and the learning and expert trials of one seed with the method of Smith et al. (2004)
+    :param correct_trials: Array encoding for each trial whether the correct action was taken
+    :return: Dictionary of the performance trace (one entry more than the number of trials) and the learning and expert
+    trials (counted from 0, nan if not reached)
+    """
+    t_learn, t_expert, performance, _ = smith_analysis(correct_trials)
+    return {K_PERFORMANCE: performance,
+            K_LEARNING_T: int(t_learn) - 1 if np.isfinite(t_learn) else np.nan,
+            K_EXPERT_T: int(t_expert) - 1 if np.isfinite(t_expert) else np.nan}
+
+
+def simulate_and_analyse_seed(args: tuple) -> dict:
+    """
+    Simulate one seed with a single torch thread (seeds run in parallel processes) and add its performance trace and
+    its learning and expert trials to the recorded variables
+    :param args: Tuple of the simulation identifier, the seed and the fast, inhibition and theta_0 options of
+    simulate_seed
+    :return: Dictionary of the recorded variables of the seed
+    """
+    simulation, seed, fast, inhibition, theta_0 = args
+    torch.set_num_threads(1)
+    result = simulate_seed(simulation=simulation, seed=seed, fast=fast, inhibition=inhibition, theta_0=theta_0)
+    result.update(get_performance(result[K_CORRECT_TRIALS]))
+    return result
+
+
+def simulate_seeds(simulation: Simulation, fast: bool = False, inhibition: bool = False, theta_0: float = None,
+                   n_workers: int = None):
+    """
+    Simulate multiple runs of the sensory discrimination task in parallel processes and save their outcomes, including
+    the performance traces
     :param simulation: Simulation identifier
     :param fast: Whether to use the hyperparameters of the fast-learning regime instead of the biological ones
     :param inhibition: Whether to inhibit the apical dendrites for the first N_TRIALS trials (only for the bottom-up
     plasticity simulations)
     :param theta_0: theta_0 parameter of the theta_0 sweep of the default simulation (None: the value of the regime)
+    :param n_workers: Number of parallel processes (None: one per CPU)
     """
     # String specifying the value of the theta_0 parameter used for the output log
     if theta_0 is not None:
@@ -421,16 +449,18 @@ def simulate_seeds(simulation: Simulation, fast: bool = False, inhibition: bool 
     else:
         t0_str = ''
 
-    # Simulate each seed and aggregate all the simulation outcomes in an array of entries for each seed
+    # Simulate the seeds and aggregate all the simulation outcomes in an array of entries for each seed
     results = []
-    for s in range(N_SEEDS):
-        print(f"\rSimulated {s}/{N_SEEDS} seeds...", end='')
-        result = simulate_seed(seed=s, simulation=simulation, fast=fast, inhibition=inhibition, theta_0=theta_0)
-        if theta_0 is not None:
-            # The theta_0 sweep only keeps the trial outcomes, the basal weights and the final apical weights
-            result = {K_OUTCOME: result[K_OUTCOME], K_CORRECT_TRIALS: result[K_CORRECT_TRIALS],
-                      K_W_BAS: result[K_W_BAS], K_W_AP: result[K_W_AP][-1:, :]}
-        results += [result]
+    with Pool(n_workers) as pool:
+        for result in pool.imap(simulate_and_analyse_seed,
+                                [(simulation, s, fast, inhibition, theta_0) for s in range(N_SEEDS)]):
+            if theta_0 is not None:
+                # The theta_0 sweep only keeps the trial outcomes, the basal weights, the final apical weights and the
+                # performance
+                result = {k: result[k] for k in (K_OUTCOME, K_CORRECT_TRIALS, K_W_BAS, K_PERFORMANCE, K_LEARNING_T,
+                                                 K_EXPERT_T)} | {K_W_AP: result[K_W_AP][-1:, :]}
+            results += [result]
+            print(f"\rSimulated {len(results)}/{N_SEEDS} seeds...", end='')
     print(f"\rSimulation{t0_str} finished successfully.")
 
     # Save all the recorded variables of interest
@@ -438,69 +468,29 @@ def simulate_seeds(simulation: Simulation, fast: bool = False, inhibition: bool 
         dump(results, handle, protocol=HIGHEST_PROTOCOL)
 
 
-def save_trial_outcomes_matlab() -> None:
+def extract_performances(n_workers: int = None) -> None:
     """
-    Save the arrays containing a bool for each trial describing whether the correct action was taken to matlab files
-    """
-    for simulation, fast, inhibition in get_runs():
-        with open(get_path(simulation=simulation, fast=fast, inhibition=inhibition), 'rb') as handle:
-            load_results = load(handle)
-        save_results = {K_CORRECT_TRIALS: np.array([load_results[s][K_CORRECT_TRIALS] for s in range(N_SEEDS)])}
-        savemat(SMITH_DIR / f'outcomes_{get_run_name(simulation, fast, inhibition)}.mat', save_results)
-    print('Simulation results saved and ready to extract performance traces.')
-
-
-def compute_smith_perf(n_workers: int = None) -> None:
-    """
-    Extract the performance traces, learning trials and expert trials from the trial outcomes in Smith/outcomes_*.mat
-    with the Python port of the Smith et al. (2004) estimator and save them to Smith/performances.mat, as the Matlab
-    script Smith/getperfs.m does.
+    Extract the performance traces and the learning and expert trials of all saved simulation results again
     :param n_workers: Number of parallel processes (None: one per CPU)
     """
-    names = [get_run_name(simulation, fast, inhibition) for simulation, fast, inhibition in get_runs()]
-    correct_trials = [loadmat(str(SMITH_DIR / f'outcomes_{name}.mat'))[K_CORRECT_TRIALS] for name in names]
+    paths = [get_path(simulation=simulation, fast=fast, inhibition=inhibition)
+             for simulation, fast, inhibition in get_runs()]
+    paths += [get_path(simulation=Simulation.DEFAULT, theta_0=t0) for t0 in get_thetas_0()]
     with Pool(n_workers) as pool:
-        analyses = pool.map(run_analysis, [c[s] for c in correct_trials for s in range(N_SEEDS)], chunksize=1)
-    performances = {K_EXPERT_T: np.zeros((len(names), N_SEEDS)), K_LEARNING_T: np.zeros((len(names), N_SEEDS))}
-    for i, name in enumerate(names):
-        performances[f'perf_{name}'] = np.zeros((N_SEEDS, correct_trials[i].shape[1] + 1))
-        for s in range(N_SEEDS):
-            t_learn, t_expert, pmid, _ = analyses[i * N_SEEDS + s]
-            performances[K_LEARNING_T][i, s] = t_learn
-            performances[K_EXPERT_T][i, s] = t_expert
-            performances[f'perf_{name}'][s, :] = pmid
-    savemat(get_path(simulation=Simulation.SMITH_PERFORMANCE), performances)
-    print('Performance traces have been extracted.')
-
-
-def load_smith_perf() -> None:
-    """
-    Load the performances computed by compute_smith_perf() or by the Matlab script Smith/getperfs.m and save them into
-    the results pickle files
-    """
-
-    # Load performance traces
-    matlab_data = loadmat(str(get_path(simulation=Simulation.SMITH_PERFORMANCE)))
-
-    # Load other results, insert performances into the results dictionary and save
-    for i, (simulation, fast, inhibition) in enumerate(get_runs()):
-        results_path = get_path(simulation=simulation, fast=fast, inhibition=inhibition)
-        with open(results_path, 'rb') as handle:
-            load_results = load(handle)
-        for seed in range(N_SEEDS):
-            for k in (K_EXPERT_T, K_LEARNING_T):  # Counted from 1 in Matlab, from 0 here (nan if not reached)
-                t = matlab_data[k][i][seed]
-                load_results[seed][k] = int(t) - 1 if np.isfinite(t) else np.nan
-            load_results[seed][K_PERFORMANCE] = matlab_data[f'perf_{get_run_name(simulation, fast, inhibition)}'][seed]
-
-        with open(results_path, "wb") as handle:
-            dump(load_results, handle, protocol=HIGHEST_PROTOCOL)
-    print('Extracted performance traces have been integrated into simulation results.')
+        for path in paths:
+            with open(path, 'rb') as handle:
+                results = load(handle)
+            performances = pool.map(get_performance, [result[K_CORRECT_TRIALS] for result in results])
+            for result, performance in zip(results, performances):
+                result.update(performance)
+            with open(path, 'wb') as handle:
+                dump(results, handle, protocol=HIGHEST_PROTOCOL)
+            print(f'Performance traces extracted for {path.relative_to(ROOT_DIR)}')
 
 
 def run():
     """
-    Run all simulations, extract their performance traces and save their outcomes.
+    Run all simulations and save their outcomes, including the performance traces.
     """
 
     # Make sure the necessary directories exist
@@ -513,9 +503,3 @@ def run():
     print('\nSimulating the theta_0 sweep:')
     for t0 in get_thetas_0():
         simulate_seeds(simulation=Simulation.DEFAULT, theta_0=t0)
-
-    # Save the learning outcomes in a format that can be processed by Smith/getperfs.m, extract the performance traces
-    # with the Python port of that script and integrate them into the results
-    save_trial_outcomes_matlab()
-    compute_smith_perf()
-    load_smith_perf()
