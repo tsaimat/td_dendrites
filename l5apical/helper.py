@@ -50,7 +50,7 @@ HYPERPARAMETERS = {
 Key = Literal[
     'outcome', 'correct_trials', 'performance', 'learning_t', 'expert_t', 'v_hat', 'td_delta', 'w_ap', 'x_pre_t',
     'sensory_dendrite', 'sensory_dendrite_t1', 'sensory_dendrite_t2', 'outcome_dendrite', 'gain', 'w_bas',
-    'w_bas_final', 'w_bas_history', 'w_bas_history_t', 'x_som_texture'
+    'w_bas_final', 'w_bas_history', 'w_bas_history_t', 'x_som_texture', 'x_som_cue'
 ]
 K_OUTCOME: Key = 'outcome'
 K_CORRECT_TRIALS: Key = 'correct_trials'
@@ -66,6 +66,7 @@ K_W_BAS_FINAL: Key = 'w_bas_final'
 K_W_BAS_H: Key = 'w_bas_history'
 K_W_BAS_T: Key = 'w_bas_history_t'
 K_X_SOM_TXT: Key = 'x_som_texture'
+K_X_SOM_CUE: Key = 'x_som_cue'
 K_DENDRITE_SENSORY: Key = 'sensory_dendrite'
 K_DENDRITE_SENSORY_T1: Key = 'sensory_dendrite_t1'
 K_DENDRITE_SENSORY_T2: Key = 'sensory_dendrite_t2'
@@ -73,7 +74,7 @@ K_DENDRITE_OUTCOME: Key = 'outcome_dendrite'
 K_GAIN: Key = 'gain'
 KEYS_1D = [K_OUTCOME, K_CORRECT_TRIALS, K_PERFORMANCE, K_DENDRITE_OUTCOME]
 KEYS_2D = [K_V_HAT, K_TD_DELTA, K_TIMINGS, K_W_AP, K_DENDRITE_SENSORY, K_DENDRITE_SENSORY_T1, K_DENDRITE_SENSORY_T2,
-           K_X_SOM_TXT, K_GAIN]
+           K_X_SOM_TXT, K_X_SOM_CUE, K_GAIN]
 
 
 class Outcome(Enum):

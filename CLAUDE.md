@@ -50,14 +50,18 @@ of `DEFAULT`).
   apical inhibition). `results/fast/` holds the same eight files for the fast-learning regime (read only by its own
   supplementary figure), `results/theta_0/t_<theta_0>.pickle` the `theta_0` sweep of `DEFAULT`. `get_path()` is the
   single source of truth for these paths.
-- Slim format (user, 2026-10-13): the trials x neurons arrays (`w_ap`, `gain`, `x_som_texture`) are float32, the
-  eligibility trace `z` is not stored, and the sweep files keep only `outcome`, `correct_trials`, `w_bas`, the last
-  row of `w_ap` and the performance. `performance` is the Smith trace (one entry more than the trials), `learning_t`
-  and `expert_t` are ints counted from 0 (nan if not reached). `w_bas` holds the initial basal weights (the S12 panels
-  bin neurons by them), `w_bas_final` the final ones, and the `BU_*` runs add `w_bas_history` (snapshots after trials
-  0, 50, ..., last) and `w_bas_history_t`. `gain` is recorded at the time steps when each neuron's preferred stimulus
-  (largest initial weight) is present, in every protocol. Sizes: 235 MB (`DEFAULT`), 518 MB (`APICAL_INHIBITION`), 284
-  / 625 MB (`BU_*` without / with inhibition), 7.0 GB for the 16 runs, 1.8 MB per sweep value.
+- Slim format (user, 2026-10-13): the trials x neurons arrays (`w_ap`, `gain`, `x_som_texture`, `x_som_cue`) are
+  float32, the eligibility trace `z` is not stored, and the sweep files keep only `outcome`, `correct_trials`, `w_bas`,
+  the last row of `w_ap` and the performance. `performance` is the Smith trace (one entry more than the trials),
+  `learning_t` and `expert_t` are ints counted from 0 (nan if not reached). `w_bas` holds the initial basal weights (the
+  S12 panels bin neurons by them), `w_bas_final` the final ones, and the `BU_*` runs add `w_bas_history` (snapshots
+  after trials 0, 50, ..., last) and `w_bas_history_t`. `gain` is recorded at the time steps when each neuron's
+  preferred stimulus (largest initial weight) is present, in every protocol. `x_som_texture` and `x_som_cue` are the
+  somatic activity at the texture and at the cue time step; `x_som_cue` exists since 2026-10-16 (for the cue-selective
+  neurons of f4f), so far only in `results_default.pickle` (re-simulated, every other key bit-identical); the other runs
+  get it at the next `python main.py simulate` (about 1.5 GB more). Sizes: 307 MB (`DEFAULT`), 518 MB
+  (`APICAL_INHIBITION`), 284 / 625 MB (`BU_*` without / with inhibition), 7.1 GB for the 16 runs, 1.8 MB per sweep
+  value.
 - `*.pickle` are git LFS objects (`.gitattributes`). git-lfs is not installed on this machine: the checkout held
   134-byte pointers, and the regenerated results are local and uncommitted. Never `git add` them without git-lfs
   (GitHub rejects files over 100 MB, and the history would carry them).
@@ -93,14 +97,17 @@ of `DEFAULT`).
 - `panels.py`: `get_results()` loads a pickle and optionally aligns all traces to each seed's expert trial
   (`align_to_expert()`: the `N_BEFORE_EXPERT` (500) trials before it and the `N_EXPERTS` (150) from it on, nan outside
   the simulation). `get_texture_responsive()` is the responsiveness test of S12d (mean somatic activity in the texture
-  window above 0.1 over a range of trials), `get_sensory_dendrites()` computes the sensory-dendrite activity of any
-  group of neurons from the stored `w_ap` and `x_pre_t` (exact to 1e-7 against the recorded go/no-go trace). Shared
-  helpers (`plot_trace`, `plot_v_hat`, `plot_apical_raster`, `plot_apical_trace_boxplot`, `set_style`,
-  `save_or_show`) are wrapped by thin per-panel functions named after manuscript figure panels (`f4c_...`,
-  `fs12b_...`). `plot_all()` is the ordered list of every panel. All panels read the biological `DEFAULT` and
-  `APICAL_INHIBITION` runs (S12 included, so `fs12a` plots the same as `f4c`), `fs12b_theta0` the sweep; nothing plots
-  the `BU_*` or fast runs yet. Figure dimensions are in cm-derived constants at the top of the file and output is PDF
-  at `DPI` plus an SVG copy.
+  window above 0.1 over a range of trials), `get_texture_selective()` gives the go- and no-go-selective neurons (the
+  selective bins of S12d, go minus no-go response beyond 0.2), `get_cue_selective()` the cue-selective neurons (cue
+  response above 0.1 and above the texture response by more than 0.2), `get_sensory_dendrites()` and `get_gains()`
+  compute the sensory-dendrite activity and the gain at a time step of any group of neurons from the stored `w_ap` and
+  `x_pre_t` (exact to 1e-7 against the recorded go/no-go trace; gains exact at the cue and within 0.0002 on average at
+  the texture), and `get_trials()` returns each seed's trials, all or aligned to its expert trial. Shared helpers
+  (`plot_trace`, `plot_v_hat`, `plot_apical_raster`, `plot_apical_trace_boxplot`, `set_style`, `save_or_show`) are
+  wrapped by thin per-panel functions named after manuscript figure panels (`f4c_...`, `fs12b_...`). `plot_all()` is the
+  ordered list of every panel. All panels read the biological `DEFAULT` and `APICAL_INHIBITION` runs (S12 included, so
+  `fs12a` plots the same as `f4c`), `fs12b_theta0` the sweep; nothing plots the `BU_*` or fast runs yet. Figure
+  dimensions are in cm-derived constants at the top of the file and output is PDF at `DPI` plus an SVG copy.
 - `parula.py`: Matlab parula colormap data.
 
 Adding a new simulation variant means: an enum member in `Simulation` (and in `BU_SIMULATIONS` for a basal rule), its
@@ -175,9 +182,24 @@ chronological notes of everything tried, including the rules that were set aside
   `simulate_seed()` is a per-trial vector instead of a trials x neurons array (`check_reproduces` 16/16 identical, seed
   0 of the default run and of hebb with inhibition identical to the saved results on every key). f4f, S12c, S12d and
   S13 are pixel-identical to before.
-- Still to review: the other panels of Fig. 4 and S11 to S13. The f4e rasters and f4f show single neurons (the cue,
-  go and no-go neuron, 0, 2 and 1); the user's principle for f4g was that the model neurons should match a random
-  sample of L5 neurons.
+- f4e (apical and soma rasters), S11e (the same apical raster function) and f4f (user, 2026-10-16): the single go and
+  no-go neuron are replaced by the initially go- and no-go-selective neurons (61 and 67 per seed, the S12d counts; the
+  single neurons are in their group in every seed). The apical side barely changes (last 300 trials: `w_ap` 0.94 and
+  0.93 against 1.00, texture-time gain 8.6 against 9.1, sensory dendrite at touch 0.86 against 0.91); the soma response
+  in the texture window is about half (4.6 against 9.4; the single neurons' texture weight is clipped at 1), shown with
+  the soma color scale up to 5 (user; was 10). f4f (user): the cue line is the initially cue-selective neurons too
+  (`get_cue_selective()`: 58 per seed, 46 to 74, the old cue neuron included in every seed, 2.6 per seed also go- or
+  no-go-selective; final `w_ap` 0.91, cue-time gain 7.5, against 1.00 and 8.2 for the single neuron; merely
+  cue-responsive would be 309 per seed, mostly texture-responsive too), and "Other neurons" is every remaining neuron.
+  Each group's gain is taken while its stimulus is present (`get_gains()` at the cue or the texture step): the recorded
+  gain is taken at each neuron's strongest initial input, the texture for only 44 to 46 percent of the texture-selective
+  neurons, which would give 4.5 instead of 8.6. Legend labels "Cue-selective", "Go-selective", "NoGo-selective" (longer
+  ones do not fit the panel). The soma figures keep their row labels (go group on top, no-go group below, as for the
+  single neurons). Before/after page: https://claude.ai/artifact/MEwDJUGGvdCXhK8YjFPCKr (PNGs in `panels/f4ef_options/`,
+  gitignored).
+- Still to review with the user: f4h_w_ap still plots the single go and no-go neuron (neurons 1 and 2, `w_ap[:, 1:3]`)
+  of both protocols, the obvious next candidate for the selective groups; then f4c, f4d, the f4h performance and
+  expert-trial panels, S11b to S11d, S12 and S13.
 
 ### Model state (decided in the sandbox)
 
@@ -228,11 +250,11 @@ chronological notes of everything tried, including the rules that were set aside
 
 ### Next
 
-1. Finalize the figures (user, 2026-10-16): continue the panel review with the user (f4g done, see Figure review),
-   then design the two new supplementary figures (the rules in the biological regime, and the fast regime): performance
-   traces and expert trials in both protocols, selectivity before and after, detector counts, from
-   `results/results_{hebb,bcm,calcium}*.pickle` and `results/fast/`; prototypes `sandbox/figures.py`,
-   `selectivity.py` and `speedup.py`.
+1. Finalize the figures (user, 2026-10-16): continue the panel review with the user (f4g, f4e, f4f and S11e done, see
+   Figure review), then design the two new supplementary figures (the rules in the biological regime, and the fast
+   regime): performance traces and expert trials in both protocols, selectivity before and after, detector counts, from
+   `results/results_{hebb,bcm,calcium}*.pickle` and `results/fast/`; prototypes `sandbox/figures.py`, `selectivity.py`
+   and `speedup.py`.
 2. Normalization (user, 2026-10-14): investigate how normalization shapes the bottom-up plasticity. Current use: the
    init normalizes each neuron's lognormal weights to a total of 1.89 and clips at 1 (17 percent of the neurons
    clipped, mean total 1.84); during plasticity only calcium renormalizes (`pre` in calcium4, `l1` in calcium3, at
@@ -247,7 +269,8 @@ chronological notes of everything tried, including the rules that were set aside
    1 and 2), `x_som_texture` in the 8 inhibition runs (1.3 GB) and `w_bas_final` (a copy of `w_bas` or of the last
    snapshot, 21 MB): 7.0 to 2.1 GB, with `DEFAULT` (234 MB) and the rule files (139 to 145 MB) still above GitHub's
    100 MB. f4g reads `x_pre_t` and `w_ap` of `DEFAULT`; `td_delta` is read by nothing, and neither is
-   `sensory_dendrite` (the go/no-go mean, now only the reference of `get_sensory_dendrites()`). In git,
+   `sensory_dendrite` (the go/no-go mean, now only the reference of `get_sensory_dendrites()`), and `x_som_cue` is
+   only read in `DEFAULT`. In git,
    `results_default.pickle` and `results_perturbed.pickle` are still the LFS pointers of the pre-port results; the
    pointers of the deleted `MIXED_SELECTIVITY` and `BU_PLASTICITY` runs were removed on 2026-10-16.
 4. Decide what happens to the 24 GB of figure-set pickles (user, after the port), and delete the sandbox once the new

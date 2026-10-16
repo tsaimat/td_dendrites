@@ -40,10 +40,13 @@ def main(n_trials=120, seed=1):
                     ref = S.simulate_seed(sim_inh, seed=seed, fast=fast)
                 else:
                     ref = S.simulate_seed(sim, seed=seed, fast=fast, inhibition=inhibition and sim_inh is None)
-                bad = [k for k in ref if not np.array_equal(np.asarray(ref[k], float), np.asarray(out[k], float),
-                                                            equal_nan=True)]
+                shared = [k for k in ref if k in out]
+                bad = [k for k in shared if not np.array_equal(np.asarray(ref[k], float), np.asarray(out[k], float),
+                                                               equal_nan=True)]
                 label = f"{name}{suffix} {'inhibited' if inhibition else 'fresh'}"
-                print(f"{label:22s}: {'IDENTICAL' if not bad else 'DIFFERS in ' + ', '.join(bad)} ({len(ref)} keys)")
+                only_main = [k for k in ref if k not in out]  # Recorded by the main code only (not by the mirror)
+                print(f"{label:22s}: {'IDENTICAL' if not bad else 'DIFFERS in ' + ', '.join(bad)} ({len(shared)} keys"
+                      + (f"; not in the mirror: {', '.join(only_main)}" if only_main else '') + ')')
                 ok &= not bad
     sys.exit(0 if ok else 1)
 

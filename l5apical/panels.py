@@ -49,6 +49,7 @@ N_EXPERTS = 150  # Number of expert trials to plot
 N_AV_BIN = 20  # Number of available bins for histograms
 BIN_MAX = 6  # Maximal bin ID for histogram
 RESPONSIVE_THRESHOLD = 0.1  # Mean somatic activity in the texture window above which a neuron is texture-responsive
+SELECTIVE_THRESHOLD = 0.2  # Difference of that activity between go and no-go trials beyond which it is selective
 N_PHASE_TRIALS = 100  # Number of trials over which the responses before and after learning are averaged
 END_T = OUTCOME_T + 2  # Time step up to which to plot
 
@@ -71,7 +72,7 @@ def get_results(simulation: Simulation = Simulation.DEFAULT, expert_aligned: boo
             expert_t = int(results[s][K_EXPERT_T])
             for k in [K_LEARNING_T, K_EXPERT_T]:
                 results[s][k] = results[s][k] - expert_t + N_BEFORE_EXPERT
-            for k in KEYS_1D + KEYS_2D:
+            for k in [k for k in KEYS_1D + KEYS_2D if k in results[s]]:
                 results[s][k] = align_to_expert(values=results[s][k], expert_t=expert_t)
 
     return results
@@ -92,15 +93,60 @@ def align_to_expert(values: np.ndarray, expert_t: int) -> np.ndarray:
     return aligned
 
 
+def get_trials(values: list[np.ndarray], results: list[dict], expert_aligned: bool) -> list[np.ndarray]:
+    """
+    Get the values of each seed for all its trials or for the trials aligned to its expert trial
+    :param values: arrays of values of each seed with the trials along the first dimension (not aligned)
+    :param results: results dictionaries of all seeds (not aligned)
+    :param expert_aligned: whether to align the trials to the expert trial of each seed
+    :return: list of the arrays of values of each seed
+    """
+    if expert_aligned:
+        return [align_to_expert(values=v, expert_t=int(r[K_EXPERT_T])) for v, r in zip(values, results)]
+    return values
+
+
 def get_texture_responsive(result: dict, trials: tuple[int, int] = (0, N_PHASE_TRIALS)) -> np.ndarray:
     """
-    Get the texture-responsive neurons, whose mean somatic activity in the texture window over a range of trials is above
-    RESPONSIVE_THRESHOLD
+    Get the texture-responsive neurons, whose mean somatic activity in the texture window over a range of trials is
+    above RESPONSIVE_THRESHOLD
     :param result: results dictionary of one seed (not aligned)
     :param trials: first trial and last trial plus one of the range
     :return: boolean array encoding whether each neuron is texture-responsive
     """
     return np.array([np.mean(result[K_X_SOM_TXT][trials[0]:trials[1], i]) > RESPONSIVE_THRESHOLD for i in range(N_Z)])
+
+
+def get_texture_selective(result: dict, trials: tuple[int, int] = (0, N_PHASE_TRIALS)
+                          ) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Get the go-selective and the no-go-selective neurons: the texture-responsive neurons whose mean somatic activity in
+    the texture window over a range of trials is larger in go than in no-go trials by more than SELECTIVE_THRESHOLD, or
+    smaller by more than it (the selective bins of fig. S12d)
+    :param result: results dictionary of one seed (not aligned)
+    :param trials: first trial and last trial plus one of the range
+    :return: boolean arrays encoding whether each neuron is go-selective and whether it is no-go-selective
+    """
+    values = result[K_X_SOM_TXT][trials[0]:trials[1]].astype(np.float64)
+    outcomes = result[K_OUTCOME][trials[0]:trials[1]]
+    selectivity = (np.nanmean(get_texture_specific(texture=True, outcomes=outcomes, values=values), axis=0)
+                   - np.nanmean(get_texture_specific(texture=False, outcomes=outcomes, values=values), axis=0))
+    responsive = get_texture_responsive(result=result, trials=trials)
+    return responsive & (selectivity > SELECTIVE_THRESHOLD), responsive & (selectivity < -SELECTIVE_THRESHOLD)
+
+
+def get_cue_selective(result: dict, trials: tuple[int, int] = (0, N_PHASE_TRIALS)) -> np.ndarray:
+    """
+    Get the cue-selective neurons, whose mean somatic activity in the cue window over a range of trials is above
+    RESPONSIVE_THRESHOLD and larger than in the texture window by more than SELECTIVE_THRESHOLD (the criterion of the
+    go- and no-go-selective neurons, with the cue against the textures)
+    :param result: results dictionary of one seed (not aligned)
+    :param trials: first trial and last trial plus one of the range
+    :return: boolean array encoding whether each neuron is cue-selective
+    """
+    cue = np.mean(result[K_X_SOM_CUE][trials[0]:trials[1]].astype(np.float64), axis=0)
+    texture = np.mean(result[K_X_SOM_TXT][trials[0]:trials[1]].astype(np.float64), axis=0)
+    return (cue > RESPONSIVE_THRESHOLD) & (cue - texture > SELECTIVE_THRESHOLD)
 
 
 def get_sensory_dendrites(result: dict, neurons: np.ndarray) -> np.ndarray:
@@ -122,6 +168,24 @@ def get_sensory_dendrites(result: dict, neurons: np.ndarray) -> np.ndarray:
     activity[:, outcome_t] = torch.mean(apical_transfer(x_pre[:, outcome_t, None] * w_ap), dim=1).numpy()
     activity[result[K_DENDRITE_OUTCOME] == 0, outcome_t] = 0.  # Trials with the outcome-time apical activity silenced
     return activity
+
+
+def get_gains(result: dict, neurons: np.ndarray, time_step: int) -> np.ndarray:
+    """
+    Get the apical gains of a group of neurons at a time step before the outcome in each trial, computed from the
+    recorded sensory dendrite synaptic weights and pre-synaptic inputs at the start of the trial (as in
+    get_sensory_dendrites)
+    :param result: results dictionary of one seed (not aligned)
+    :param neurons: boolean array or indices of the neurons
+    :param time_step: simulated time step (0 for the cue, TEXTURE_T - TONE_T for the texture)
+    :return: array (trials x neurons) of the apical gains
+    """
+    w_ap = torch.tensor(result[K_W_AP][:, neurons], dtype=torch.float64)
+    x_pre = torch.tensor(result[K_TIMINGS][:, time_step])
+    gains = nan_array(tuple(w_ap.shape))
+    gains[0] = gain(apical_transfer(torch.tensor(0.))).item()  # The pre-synaptic inputs start at zero
+    gains[1:] = gain(apical_transfer(x_pre[:-1, None] * w_ap[:-1])).numpy()
+    return gains
 
 
 def get_outcome_specific(outcome: Outcome, outcomes: type[np.ndarray | list[np.ndarray]],
@@ -555,8 +619,9 @@ def plot_v_hat(saving=True, outcome_types: tuple[Outcome, ...] = (Outcome.HIT, O
 
 def plot_apical_raster(outcome: Outcome, expert_aligned: bool = False) -> None:
     """
-    Raster plots of the evolution of responses for each apical dendrite type (sensory and outcome dendrites) for the go
-    and the no-go texture selective neuron during a specific trial type of choice.
+    Raster plots of the evolution of responses for each apical dendrite type (sensory and outcome dendrites) of the
+    initially go-selective and no-go-selective neurons (the outcome dendrites receive the same input in every neuron)
+    during a specific trial type of choice.
     :param outcome: Outcome identifier specifying the trial type (Hit, Miss, CR or FA)
     :param expert_aligned: Whether to align trials to the first expert trial
     """
@@ -577,17 +642,20 @@ def plot_apical_raster(outcome: Outcome, expert_aligned: bool = False) -> None:
         n_trials = N_TRIALS
         t_min, t_max = 1, N_TRIALS
     n_batches = n_trials // batch_size
-    keys = [[K_DENDRITE_OUTCOME, K_DENDRITE_OUTCOME], [K_DENDRITE_SENSORY_T1, K_DENDRITE_SENSORY_T2]]
-    results = get_results(expert_aligned=expert_aligned)
-    outcomes = [results[s][K_OUTCOME] for s in range(N_SEEDS)]
+    results = get_results()
+    selective = [get_texture_selective(result=r) for r in results]
+    outcomes = get_trials(values=[r[K_OUTCOME] for r in results], results=results, expert_aligned=expert_aligned)
     fig, axs = plt.subplots(nrows=rows, ncols=cols, figsize=(cols * PANEL_WIDTH, rows * PANEL_HEIGHT))
     for i in range(rows):
         for j in range(cols):
-            key = keys[i][j]
-            data = [results[s][key] for s in range(N_SEEDS)]
+            if i == 0:
+                values = [r[K_DENDRITE_OUTCOME] for r in results]
+            else:
+                values = [get_sensory_dendrites(result=r, neurons=sel[j]) for r, sel in zip(results, selective)]
+            data = get_trials(values=values, results=results, expert_aligned=expert_aligned)
             outcome_spec_data = np.array(get_outcome_specific(outcome=outcome, outcomes=outcomes, values=data))
             apical = np.zeros((n_batches, N_TIME_STEPS))
-            if key == K_DENDRITE_OUTCOME:
+            if i == 0:  # The outcome dendrites are only active at the outcome
                 if batch_size > 1:
                     for b in range(n_batches):
                         apical[b, -1] = np.nanmean(outcome_spec_data[:, b * batch_size:(b + 1) * batch_size])
@@ -627,8 +695,8 @@ def plot_apical_raster(outcome: Outcome, expert_aligned: bool = False) -> None:
                     axs[i, j].set_ylabel('Sensory Dendrite\n\nTrial ID')
             else:
                 axs[i, j].set_yticks(y_ticks, [''] * len(y_ticks))
-    axs[0, 0].title.set_text('Go neuron')
-    axs[0, 1].title.set_text('NoGo neuron')
+    axs[0, 0].title.set_text('Go-selective neurons')
+    axs[0, 1].title.set_text('NoGo-selective neurons')
     adjust_figure(fig=fig, h_space=0.05)
 
 
@@ -852,8 +920,8 @@ def f4d_expert_v_pred(saving=True) -> None:
 
 def f4e_apical_dendrites_raster_plots(saving: bool = True) -> None:
     """
-    Raster plots of the evolution of responses for each apical dendrite type (sensory and outcome dendrites) for the go
-    and the no-go texture selective neuron during either Hit or CR trials.
+    Raster plots of the evolution of responses for each apical dendrite type (sensory and outcome dendrites) of the
+    initially go-selective and no-go-selective neurons during either Hit or CR trials.
     :param saving: boolean encoding whether to save (or just display) the plot.
     """
     plot_apical_raster(outcome=Outcome.HIT)
@@ -865,8 +933,8 @@ def f4e_apical_dendrites_raster_plots(saving: bool = True) -> None:
 
 def f4e_soma_raster_plots(saving: bool = True, expert_aligned: bool = False):
     """
-    Raster plots of the evolution of responses for somatic activity of the no-go texture selective neuron during type of
-    trial (Hit, CR, FA, Miss).
+    Raster plots of the evolution of the mean somatic activity in the texture window of the initially go-selective and
+    of the initially no-go-selective neurons during each type of trial (Hit, CR, FA, Miss).
     :param saving: boolean encoding whether to save (or just display) the plot.
     :param expert_aligned: Whether to align trials to the first expert trial
     """
@@ -887,12 +955,13 @@ def f4e_soma_raster_plots(saving: bool = True, expert_aligned: bool = False):
     cmap.set_bad(color='k')
     cb_width = 0.041
     p_cmap = get_performance_cm(reverse=True)
-    results = get_results(expert_aligned=expert_aligned)
-    outcomes = [results[s][K_OUTCOME] for s in range(N_SEEDS)]
+    results = get_results()
+    selective = [get_texture_selective(result=r) for r in results]
+    outcomes = get_trials(values=[r[K_OUTCOME] for r in results], results=results, expert_aligned=expert_aligned)
     outcome_types = [[Outcome.HIT, Outcome.MISS], [Outcome.FA, Outcome.CR]]
-    t_idxs = [T1_IDX, T2_IDX]
     for k in range(2):
-        data = [results[s][K_X_SOM_TXT][:, t_idxs[k]] for s in range(N_SEEDS)]
+        data = get_trials(values=[np.mean(r[K_X_SOM_TXT][:, sel[k]], axis=1) for r, sel in zip(results, selective)],
+                          results=results, expert_aligned=expert_aligned)
         fig, axs = plt.subplots(nrows=rows, ncols=cols, figsize=(cols * PANEL_WIDTH, rows * PANEL_HEIGHT))
         for i in range(rows):
             for j in range(cols):
@@ -906,7 +975,7 @@ def f4e_soma_raster_plots(saving: bool = True, expert_aligned: bool = False):
                     mean_data = np.nanmean(out_spec_data, axis=0)
                 mean_data[np.isnan(mean_data)] = 0
                 axs[i, j].imshow(mean_data, aspect='auto', extent=(0, END_T, t_max, t_min), vmin=0.,
-                                 vmax=MAX_GAIN, cmap=cmap)
+                                 vmax=5., cmap=cmap)
                 plot_t(ax=axs[i, j], y=t_max + (t_max-t_min) * 0.02)
                 c_map_ax = axs[i, j].inset_axes([0., cb_width, cb_width, 1 - cb_width])
                 cb = matplotlib.colorbar.ColorbarBase(c_map_ax, cmap=p_cmap, orientation='vertical')
@@ -925,9 +994,9 @@ def f4e_soma_raster_plots(saving: bool = True, expert_aligned: bool = False):
                 if j == 0:
                     axs[i, j].set_yticks(y_ticks)
                     if i == 0:
-                        axs[i, j].set_ylabel('Go neuron\n\nTrial ID')
+                        axs[i, j].set_ylabel('Go-selective neurons\n\nTrial ID')
                     else:
-                        axs[i, j].set_ylabel('NoGo neuron\n\nTrial ID')
+                        axs[i, j].set_ylabel('NoGo-selective neurons\n\nTrial ID')
                 else:
                     axs[i, j].set_yticks(y_ticks, [''] * len(y_ticks))
         axs[0, 0].title.set_text('Lick')
@@ -941,8 +1010,9 @@ def f4f_sen_dendrite(saving: bool = True, expert_aligned: bool = False) -> None:
     """
     Multi-panel plot showing:
     - Evolution of the sensory dendrite synaptic weight strengths depending on the bottom-up (basal) selectivity of the
-      pyramidal neurons (with learning)
-    - Evolution of the multiplicative gains of different stimuli with learning
+      pyramidal neurons (with learning): the initially cue-, go- and no-go-selective neurons and all the other neurons
+    - Evolution of the multiplicative gains of different stimuli with learning (for the selective neurons at the time of
+      their stimulus, for the others at the time of their strongest basal input)
     :param saving: boolean encoding whether to save (or just display) the plot.
     :param expert_aligned: Whether to align trials to the first expert trial
     """
@@ -954,7 +1024,7 @@ def f4f_sen_dendrite(saving: bool = True, expert_aligned: bool = False) -> None:
     else:
         n_trials = N_TRIALS
         t_min, t_max = 1, N_TRIALS
-    results = get_results(expert_aligned=expert_aligned)
+    results = get_results()
     batch_size = 50
     n_batches = n_trials // batch_size
     set_style()
@@ -974,24 +1044,28 @@ def f4f_sen_dendrite(saving: bool = True, expert_aligned: bool = False) -> None:
     # Plot traces of the sensory dendrite synapse strengths and of the pyramidal neuron gains
     trials = np.linspace(t_min, t_max, n_batches, endpoint=True)
     plot_cols = [COL_PRE, COL_T1, COL_T2, COL_DISTRACTOR]
-    idxs = [0, T1_IDX, T2_IDX, np.arange(3, N_Z)]  # The neurons are relabeled so that T1_IDX is the go neuron
-    axes = (0, 0, 0, (0, 2))
     keys = [K_W_AP, K_GAIN]
     x_ticks = [[0, 0.5, 1], [0, 2, 4, 6, 8, 10]]
     x_labs = [r'Apical synaptic weight $w^\mathrm{ap}$', r'Apical gain $g$']
-    labels = ['Cue neuron', 'Go neuron', 'NoGo neuron', 'Other neurons']
+    labels = ['Cue-selective', 'Go-selective', 'NoGo-selective', 'Other neurons']
+    groups = []  # The initially cue-, go- and no-go-selective neurons and all the other neurons of each seed
+    for r in results:
+        cue = get_cue_selective(result=r)
+        go, nogo = get_texture_selective(result=r)
+        groups.append([cue, go, nogo, ~(cue | go | nogo)])
+    time_steps = [0, TEXTURE_T - TONE_T, TEXTURE_T - TONE_T]  # Time steps of the stimulus each group is selective for
     for row in range(2):
-        data = np.array([results[s][keys[row]] for s in range(N_SEEDS)])
         mean_data = np.zeros((n_batches, 4))
         for i in range(4):
+            if keys[row] == K_GAIN and i < 3:  # The selective neurons while their stimulus is present
+                values = [get_gains(result=r, neurons=g[i], time_step=time_steps[i]) for r, g in zip(results, groups)]
+            else:  # The recorded gains, at the time step of the strongest initial basal input of each neuron
+                values = [r[keys[row]][:, g[i]] for r, g in zip(results, groups)]
+            data = np.concatenate(get_trials(values=values, results=results, expert_aligned=expert_aligned), axis=1)
             st_err = np.zeros(n_batches)
-            if batch_size > 1:
-                for b in range(n_batches):
-                    mean_data[b, i] = np.nanmean(data[:, b * batch_size:(b + 1) * batch_size, idxs[i]])
-                    st_err[b] = np.nanstd(data[:, b * batch_size:(b + 1) * batch_size, idxs[i]]) / np.sqrt(batch_size)
-            else:
-                mean_data[:, i] = np.nanmean(data[:, :, idxs[i]], axis=axes[i])
-                st_err = np.nanstd(data[:, :, idxs[i]], axis=axes[i])
+            for b in range(n_batches):
+                mean_data[b, i] = np.nanmean(data[b * batch_size:(b + 1) * batch_size])
+                st_err[b] = np.nanstd(data[b * batch_size:(b + 1) * batch_size]) / np.sqrt(batch_size)
             axs[row].fill_betweenx(trials, mean_data[:, i] - st_err, mean_data[:, i] + st_err,
                                           color=plot_cols[i], alpha=0.3, linewidth=0.)
         for i in range(4):
@@ -1222,8 +1296,8 @@ def fs11d_expert_v_pred(saving=True) -> None:
 
 def fs11e_apical_dendrites_raster_plots(saving: bool = True) -> None:
     """
-    Raster plots of the evolution of responses for each apical dendrite type (sensory and outcome dendrites) for the go
-    and the no-go texture selective neuron during FA trials.
+    Raster plots of the evolution of responses for each apical dendrite type (sensory and outcome dendrites) of the
+    initially go-selective and no-go-selective neurons during FA trials.
     :param saving: boolean encoding whether to save (or just display) the plot.
     """
     plot_apical_raster(outcome=Outcome.FA)

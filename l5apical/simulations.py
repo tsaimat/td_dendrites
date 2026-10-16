@@ -256,7 +256,7 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
     # Initialization of empty objects in which various simulation variables will be recorded
     outcomes, correct_trials, den_out = tuple(nan_array((n_trials,)) for _ in range(3))
     d_sen_tx, d_sen_t1, d_sen_t2, x_pre_t_h, td_delta_h = tuple(nan_array((n_trials, n_timings)) for _ in range(5))
-    w_ap_h, gain_h, x_som_texture_h = tuple(nan_array((n_trials, n_z), dtype=np.float32) for _ in range(3))
+    w_ap_h, gain_h, x_som_texture_h, x_som_cue_h = tuple(nan_array((n_trials, n_z), dtype=np.float32) for _ in range(4))
     v_hat_h = np.zeros((n_trials, 1 + n_timings))
     snapshot_ts = sorted(set(list(range(0, n_trials, SNAPSHOT_EVERY)) + [n_trials - 1]))  # Trials of w_bas snapshots
     w_bas_h = np.zeros((len(snapshot_ts), n_inputs, n_z), dtype=np.float32)
@@ -315,6 +315,8 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
             gain_h[j, driven.numpy()] = gains[driven].detach().clone().numpy()
             if t == texture_t:
                 x_som_texture_h[j, :] = x_som.detach().clone().numpy()
+            if t == tone_t:
+                x_som_cue_h[j, :] = x_som.detach().clone().numpy()
 
         # Select the action, observe the reward obtained and update the policy network accordingly
         reward, licked, correct_trials[j] = actor.act(texture)
@@ -395,7 +397,8 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
               K_TIMINGS: x_pre_t_h,
               K_W_BAS: w_bas_init.numpy(),
               K_W_BAS_FINAL: w_bas.numpy(),
-              K_X_SOM_TXT: x_som_texture_h}
+              K_X_SOM_TXT: x_som_texture_h,
+              K_X_SOM_CUE: x_som_cue_h}
     if bu_plasticity:
         result[K_W_BAS_H] = w_bas_h
         result[K_W_BAS_T] = np.array(snapshot_ts)
