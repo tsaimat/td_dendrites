@@ -8,7 +8,7 @@ the `l5apical` package. Delete this directory when done; nothing outside it depe
 
 | file | purpose |
 |---|---|
-| `rules.py` | the candidate rules (all with the same signature, registered in `RULES`), their default hyperparameters (`RULE_HP`) and the weight-bounding mechanisms (`apply_bound`); `hebb`, `bcm` and `calcium` are the ones carried forward, `gated_hebb`, `burst`, `us` and `oja` were set aside (see `NOTES.md`) |
+| `rules.py` | the candidate rules (all with the same signature, registered in `RULES`), their default hyperparameters (`RULE_HP`) and the weight-bounding mechanisms (`apply_bound`); `hebb`, `bcm` and `calcium` are the ones carried forward, `gated_hebb`, `burst`, `us` and `oja` were set aside (see `NOTES.md`; the first three were re-tuned on control4 on 2026-10-18, when `burst` was changed to read the apical activation rescaled to 0 at rest and the running averages of `burst` and `us` to start at rest; `apdev`, the user's apical-deviation rule, was added and tested on 2026-10-19; `apdev_bar` `False` drops its low-pass, dw = lr x_in s, for the no-baseline version with a normalizing bound; `apdev_mult` `'bas'` (2026-10-20) multiplies the update by the neuron's basal drive instead of the weight, `'wbas'` (2026-10-21) by both; `apdev_bas_power` raises the basal drive to a power and `apdev_xbar` subtracts each input's running average from the presynaptic factor, over all steps, per step of the trial or per synapse over the neuron's apical events, 2026-10-21) |
 | `simulate.py` | mirror of `l5apical.simulations.simulate_seed` with a rule hook, hyperparameter dict, optional apical inhibition, w_bas snapshots, and cheap Python metrics (no Matlab needed) |
 | `sweep.py` | CLI: run a single config or a cartesian grid, parallel over (config, seed), writes pickles + `summary.csv`; `--summary-only` keeps no pickles (a slim 4000-trial seed at 1000 neurons is about 65 MB, so large confirmation sweeps need it) |
 | `plot.py` | CLI: one overview figure per config plus a cross-config comparison |
@@ -22,7 +22,8 @@ the `l5apical` package. Delete this directory when done; nothing outside it depe
 | `selectivity.py` | `python -m sandbox.selectivity control hebb bcm calcium`: side-by-side comparison of how each rule changes the basal and somatic selectivity relative to the control (from the figure pickles) |
 | `speedup.py` | `python -m sandbox.speedup slow:control2,hebb2,bcm2,calcium2 fast:control3,hebb3,bcm3,calcium3`: summary figure of the speed-up by each rule in one or more control conditions (mean Smith performance traces without inhibition and in the inhibition protocol, per-seed Smith expert trials without inhibition and after the lift), from the figure pickles |
 | `scan_smith.py`, `scan_table.py`, `scan_rtable.py` | Smith-scored scans (condition 4): `python -m sandbox.scan_smith <out.jsonl> '<json {name: overrides}>' [seeds, e.g. 0-9] [both, fresh or inh]` runs every configuration and seed in the protocols asked for, overrides on top of the 2026-10-02 candidate (`BASE`), parallel and resumable, one JSON line per run (Smith expert trial on the full series as in the pipeline, final performance, divergence, selectivity transitions, full-gain count); `python -m sandbox.scan_table <files> [--seeds=0-9]` ranks configurations by the distance of both expert times to 1100 and to each other, `python -m sandbox.scan_rtable <files>` tabulates rules |
-| `check_reproduces.py` | asserts that the ported main code is bit-identical to the mirror at the settings of the figure sets `control4`, `hebb4`, `bcm4`, `calcium4` (biological regime) and `control3`, `hebb3`, `bcm3`, `calcium3` (fast regime), without and with apical inhibition, on short runs; the sandbox defaults keep the constants of the main code before the port (`LR`, `THETA`, `N_Z` 203, `THETA_0` 4, pinned in `simulate.py`) |
+| `scan_gated.py`, `tab_gated.py` | Smith-scored scans on top of control4 (used for the rules with an explicit apical factor, 2026-10-18): `python -m sandbox.scan_gated <out.jsonl> '<json {name: overrides}>' [seeds] [both, fresh or inh] [trace]` runs like `scan_smith` but with the control4 settings of `results/s1_control4/finalists.json` as the base and the main code's 4000-trial inhibition protocol, and adds texture and tone detector percentages, total input and weight change per run (at the end and at the lift) and, with `trace`, the Smith performance trace; `python -m sandbox.tab_gated <files> [--prot fresh|inh]` prints one row per configuration |
+| `check_reproduces.py` | asserts that the ported main code is bit-identical to the mirror at the settings of the figure sets `control4`, `hebb4`, `bcm4`, `calcium4`, `apical4` (biological regime) and `control3`, `hebb3`, `bcm3`, `calcium3` (fast regime), without and with apical inhibition, on short runs; the sandbox defaults keep the constants of the main code before the port (`LR`, `THETA`, `N_Z` 203, `THETA_0` 4, pinned in `simulate.py`) |
 
 Run everything in the repository's own conda env `tdd`, built as the top-level README describes
 (`conda create -n tdd python=3.10.8`, then `pip install -r requirements.txt`; python at `~/miniconda3/envs/tdd/bin/python`).
@@ -59,7 +60,16 @@ column `diverged` counts such seeds.
   rule's `theta_0` untouched). At `init_power` 12 a value of 16 puts the threshold at about 1.5 times the median
   neuron's strongest un-gained response.
 - `rule_sees_gain`: `False` hands the basal rule the un-gained somatic rate and resting apical variables while the
-  network keeps the real gain (causal ablation of the implicit apical route through the soma; default `True`).
+  network keeps the real gain (causal ablation of the implicit apical route through the soma; default `True`); the
+  outcome step still shows the rule the real outcome-time apical activity, which `'never'` (2026-10-19) also hides.
+- `rule_frozen_inputs`: causal ablation only (default `()`): indices of the inputs (0 tone, 1 T2, 2 T1, then the
+  distractors) whose synapses the basal rule leaves unchanged; a renormalizing bound still rescales them.
+- `rule_start_trial`: causal ablation only (default 0): the basal rule's updates are dropped before this trial; the rule
+  is still called, so its running averages and sliding thresholds run from the first trial (2026-10-19).
+- `init_task_gain`, `init_task_rows`: causal test only (default 1.0, `'all'`): multiply the initial tone and texture
+  weights (`'textures'`: the textures only) by the factor and rescale each neuron to its previous total (2026-10-19).
+  `init_task_mode` `'shift'` (default `'scale'`, textures only) gives every weight its `'scale'` value except that the
+  two textures split their boosted sum so that each neuron keeps its initial difference w_T1 - w_T2 (before the clip).
 - `lr_dep`, `dep_form`: an extra subtractive depression term added to any rule's update (`lr_dep` 0, the default, is
   off). `thr` is the depression half of `hebb`, `- lr_dep * x_in * relu(theta_bas - x_som)` with the basal threshold
   from `theta_bas_0`, so every synapse active on a sub-threshold neuron is depressed by the gap and neurons above

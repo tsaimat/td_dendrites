@@ -109,18 +109,25 @@ def burst(w_bas, x_in, x_som, x_bas, x_ap, gains, thetas, hp, state):
 
     The burst fraction P is read off the apical activation: in the model the apical activation is the
     (sigmoidal) probability that the top-down input drives dendritic Ca2+ spikes and thereby switches the neuron to
-    bursting, which is what raises the somatic gain. So P = x_ap, no separate sigmoid needed. The literature rule
-    adds a somatic-rate term (critical frequency for Ca2+ spike ignition); hp['burst_kappa'] (default 0) puts it back
-    as P = x_ap + kappa * x_som. Pbar is a per-neuron running average of P with time constant hp['burst_tau']
-    given in trials (converted to time steps); it is updated at every time step including the outcome step.
+    bursting, which is what raises the somatic gain. P uses the apical activation rescaled to 0 at rest
+    (apical_norm, i.e. (gain - 1) / (MAX_GAIN - 1)), so P = 0 without apical input and also when the apical
+    dendrite is inhibited (x_ap = 0 at the inhibited outcome step, below the resting apical_transfer(0)); with the
+    raw x_ap that step would pull Pbar below rest and potentiate every active synapse during inhibition. Without
+    inhibition this equals the rule with P = x_ap at lr_bas / 0.9. The literature rule adds a somatic-rate term
+    (critical frequency for Ca2+ spike ignition); hp['burst_kappa'] (default 0) puts it back as
+    P = apical_norm(x_ap) + kappa * x_som. Pbar is a per-neuron running average of P with time constant
+    hp['burst_tau'] given in trials (converted to time steps); it is updated at every time step including the
+    outcome step. It starts at its fixed point without apical activity: 0 plus kappa times the expected somatic rate
+    per time step at gain 1 and the initial weights.
 
     Sign structure: synapses active while the apical dendrite is more active than usual are potentiated, synapses
-    active while it is less active than usual (e.g. distractors at random times) are depressed. With the apical
-    dendrite silenced P == Pbar and the rule is off, so it cannot support learning under apical inhibition.
+    active while it is less active than usual (e.g. distractors at random times) are depressed. With kappa = 0 and
+    the apical dendrite silent, P == Pbar == 0 and the rule is off; with kappa > 0 it stays active at gain 1 as
+    kappa x_som (x_som - running mean of x_som).
     """
-    p = x_ap + hp.get('burst_kappa', 0.) * x_som
+    p = apical_norm(x_ap) + hp.get('burst_kappa', 0.) * x_som
     if 'p_bar' not in state:
-        state['p_bar'] = p.clone()
+        state['p_bar'] = hp.get('burst_kappa', 0.) * state['_e_x_som_init'].expand_as(p).clone()
     state['p_bar'] += (p - state['p_bar']) / (hp['burst_tau'] * hp['_steps_per_trial'])
     return _pre_post(x_in, x_som * (p - state['p_bar']), hp)
 
@@ -156,18 +163,99 @@ def us(w_bas, x_in, x_som, x_bas, x_ap, gains, thetas, hp, state):
     """
     dw = lr x_in (x_som - g_bar x_bas) = lr x_in x_bas (gain - g_bar).
 
-    The basal compartment predicts the somatic rate from its own drive with the gain it usually experiences,
-    g_bar; the apical input is the teacher that pulls the soma away from that prediction. g_bar is a per-neuron
-    running average of the gain with time constant hp['us_tau'] in trials (updated at every time step including the
-    outcome step). With us_tau = inf the prediction stays at the resting gain 1, the rule is purely potentiating
-    (the gain is never below 1) and it is self-limiting only through the apical signal itself (once the TD errors
-    vanish the apical drive returns to rest). With a finite us_tau the rule also depresses synapses active while the
-    apical gain is below its usual level, as in the original rule where the teacher can push both ways.
+    The basal compartment predicts the somatic rate from its own drive with the gain it usually experiences, g_bar;
+    the apical input is the teacher that pulls the soma away from that prediction. g_bar is a per-neuron running
+    average of the gain with time constant hp['us_tau'] in trials (updated at every time step including the outcome
+    step), starting at the resting gain 1. With us_tau = inf the prediction stays at the resting gain 1, the rule is
+    purely potentiating (the gain is never below 1) and it is self-limiting only through the apical signal itself
+    (once the TD errors vanish the apical drive returns to rest). With a finite us_tau the rule also depresses
+    synapses active while the apical gain is below its usual level, as in the original rule where the teacher can
+    push both ways.
     """
     if 'g_bar' not in state:
-        state['g_bar'] = gains.clone()
+        state['g_bar'] = torch.ones_like(gains)  # starts at the resting gain 1 (no apical activity)
     state['g_bar'] += (gains - state['g_bar']) / (hp['us_tau'] * hp['_steps_per_trial'])
     return _pre_post(x_in, x_bas * (gains - state['g_bar']), hp)
+
+
+# -------------------------------------------------------------------------------------------------------------------
+# 3b. Apical-deviation rule (user, 2026-10-19)
+# -------------------------------------------------------------------------------------------------------------------
+
+def apdev(w_bas, x_in, x_som, x_bas, x_ap, gains, thetas, hp, state):
+    """
+    dw = lr x_in (s - s_bar).
+
+    The update of every active synapse is set by the neuron's apical signal s relative to its low-pass s_bar alone,
+    with no post-synaptic basal factor: synapses active while the apical signal is above its usual level (the cue and
+    touch on neurons with apical weight) are potentiated, synapses active while it is below (distractors at the other
+    time steps once the outcome step has lifted s_bar) are depressed, by the same amount for every synapse active at
+    that step. s_bar is a per-neuron running average with time constant hp['apdev_tau'] in trials (converted to time
+    steps; inf keeps it at rest, so the rule only potentiates), updated at every time step including the outcome step
+    and starting at rest. hp['apdev_signal'] = 'gain' uses s = gain (rest 1); 'x_ap' uses the apical activation itself
+    (rest apical_transfer(0) = 1 / MAX_GAIN). The gain is MAX_GAIN x_ap for x_ap >= 1 / MAX_GAIN, so the two are the
+    same rule (x_ap at lr * MAX_GAIN equals gain at lr) except at the inhibited outcome step, where x_ap = 0 pulls its
+    low-pass below rest and every active synapse is then potentiated during apical inhibition, while the gain stays 1
+    there as at rest and the rule stays silent. hp['apdev_bar_outcome'] = False is a causal ablation only: the low-pass
+    skips the outcome time step (the last call of each trial), so the outcome-time apical activity no longer lifts it.
+    hp['apdev_mult'] = True makes the update proportional to the weight, dw = lr x_in w (s - s_bar): synapses active
+    together grow or shrink by the same factor, so the ratio of a neuron's two texture weights is kept (with an
+    additive update both textures gain the same amount, because the apical signal at touch is the same in go and no-go
+    trials, and the neuron loses its go/no-go contrast). hp['apdev_bar'] = False drops the low-pass, dw = lr x_in s:
+    every active synapse is potentiated, at rest too (by lr per step with the gain), so only a normalizing bound (l1,
+    pre, both) makes the inputs compete; apdev_tau = inf instead subtracts the rest value, dw = lr x_in (s - rest),
+    which is silent at rest. Neither has a depression term. hp['apdev_mult'] = 'bas' multiplies the update by the
+    neuron's un-gained basal drive instead of the weight, dw = lr x_in x_bas (s - s_bar) (pre, basal post and the
+    apical deviation: a three-factor Hebbian form). 'wbas' multiplies by both, dw = lr x_in w x_bas (s - s_bar): the
+    increment per unit weight is then the neuron's drive, so of the synapses active at a step the one that drives the
+    neuron most grows fastest, and the background and coincident inputs in x_bas no longer lift the weak ones.
+    hp['apdev_bas_power'] raises x_bas to that power in 'bas' and 'wbas'. hp['apdev_xbar'] replaces the presynaptic
+    factor x_in by x_in - x_bar (user, 2026-10-21), x_bar a running average of each input over hp['apdev_xbar_tau']
+    trials, used before it is updated and starting at 0; it is presynaptic, so the same for every neuron, and synapses
+    of inputs absent at a step are then depressed by x_bar. 'step' averages over all time steps (the input's frequency
+    per step, below 1 / 17 for every input here); 'slot' averages each time step of the trial over trials (the input
+    expected at that moment: 1 for the tone at its step, 0.5 for each texture at the touch, p / 17 for a distractor at
+    any step), so the tone is never potentiated and at each touch the absent texture loses what the present one gains.
+    'apical' is local instead: each synapse averages its input over the stimulus steps weighted by its neuron's apical
+    activation apical_norm(x_ap) (the input expected during the neuron's apical events; tau then counts full-gain
+    events, and the outcome step, which has no basal input, is left out of the average): with equal gains at cue and
+    touch it is about 1/2 for the tone and 1/4 for each texture, so the tone's cue gain and touch loss about cancel.
+    """
+    use_gain = hp.get('apdev_signal', 'gain') == 'gain'
+    sig = gains if use_gain else x_ap
+    if 's_bar' not in state:
+        state['s_bar'] = torch.full_like(sig, 1. if use_gain else A_REST)  # starts at rest
+    n_call = state.get('_apdev_calls', 0)
+    state['_apdev_calls'] = n_call + 1
+    outcome_step = n_call % hp['_steps_per_trial'] == hp['_steps_per_trial'] - 1
+    if hp.get('apdev_bar_outcome', True) or not outcome_step:
+        state['s_bar'] += (sig - state['s_bar']) / (hp['apdev_tau'] * hp['_steps_per_trial'])
+    pre = x_in
+    xbar = hp.get('apdev_xbar')
+    if xbar:
+        if 'x_bar' not in state:
+            shape = {'step': x_in.shape, 'slot': (x_in.shape[0], hp['_steps_per_trial']),
+                     'apical': w_bas.shape}[xbar]
+            state['x_bar'] = torch.zeros(shape)
+        if xbar == 'step':
+            pre = x_in - state['x_bar']
+            state['x_bar'] += (x_in - state['x_bar']) / (hp['apdev_xbar_tau'] * hp['_steps_per_trial'])
+        elif xbar == 'slot':
+            t = n_call % hp['_steps_per_trial']
+            pre = x_in - state['x_bar'][:, t]
+            state['x_bar'][:, t] += (x_in - state['x_bar'][:, t]) / hp['apdev_xbar_tau']
+        else:  # 'apical', per synapse
+            pre = x_in[:, None] - state['x_bar']
+            if not outcome_step:
+                state['x_bar'] += pre * apical_norm(x_ap)[None, :] / hp['apdev_xbar_tau']
+    post = sig - state['s_bar'] if hp.get('apdev_bar', True) else sig
+    dw = hp['lr_bas'] * pre * post[None, :] if pre.dim() == 2 else _pre_post(pre, post, hp)
+    mult = hp.get('apdev_mult', False)
+    if mult in ('bas', 'wbas'):
+        power = hp.get('apdev_bas_power', 1)
+        dw = dw * (x_bas if power == 1 else x_bas ** power)
+        return dw * w_bas if mult == 'wbas' else dw
+    return dw * w_bas if mult else dw
 
 
 # -------------------------------------------------------------------------------------------------------------------
@@ -238,6 +326,7 @@ RULES = {
     'burst': burst,
     'bcm': bcm,
     'us': us,
+    'apdev': apdev,
     'calcium': calcium,
 }
 
@@ -251,6 +340,17 @@ RULE_HP = dict(
     burst_kappa=0.,     # burst: somatic-rate contribution to the burst fraction
     bcm_tau=100.,       # bcm: sliding-threshold time constant, in trials (inf = fixed threshold)
     us_tau=float('inf'),  # us: time constant (trials) of the running-average gain used as prediction (inf = resting gain)
+    apdev_tau=20.,      # apdev: time constant (trials) of the low-pass of the apical signal (inf = rest)
+    apdev_signal='gain',  # apdev: apical signal, 'gain' or 'x_ap' (the same rule at lr * MAX_GAIN, see apdev)
+    apdev_bar_outcome=True,  # apdev: False (causal ablation only) keeps the outcome step out of the low-pass
+    apdev_mult=False,   # apdev: True multiplies the update by the weight, 'bas' by the neuron's un-gained basal drive,
+                        # 'wbas' by both
+    apdev_bas_power=1,  # apdev: power of x_bas in apdev_mult 'bas' and 'wbas'
+    apdev_xbar=None,    # apdev: presynaptic factor x_in - x_bar, x_bar averaged over all steps ('step'), per step of
+                        # the trial over trials ('slot') or per synapse over the neuron's apical events ('apical');
+                        # None keeps x_in
+    apdev_xbar_tau=50., # apdev: time constant (trials) of x_bar
+    apdev_bar=True,     # apdev: False drops the low-pass, dw = lr x_in s (potentiation only, at rest too)
     bcm_e0_scale=1.0,   # bcm: scales E0 (> 1 lowers the threshold fixed point)
     ca_beta=2.0,        # calcium: weight of the apical Ca2+-spike term relative to the NMDA term
     ca_theta_p=1.5,     # calcium: LTP threshold as a multiple of the neuron's strongest initial basal weight

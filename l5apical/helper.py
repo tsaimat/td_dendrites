@@ -32,8 +32,10 @@ TONE_T = HZ  # Time step when tone happens (1s in trial)
 TEXTURE_T = 2 * HZ + 1  # Time step when texture is perceived (2.25s in trial)
 OUTCOME_T = 5 * HZ + 1  # Time when outcome is perceived (5.25s in trial)
 N_TIME_STEPS = 5 * HZ + 2 - TONE_T  # Total number of time steps per trial
+TONE_IDX = 0  # Index of the tone stimulus
 T1_IDX = 2  # Index of the texture 1 stimulus
 T2_IDX = 1  # Index of the texture 2 stimulus
+N_TASK_STIMULI = 3  # Number of task stimuli (the tone and the two textures), followed by the distractors
 CA_SMOOTH = 0.15  # Smoothness of the thresholds of the calcium rule, as a fraction of its LTP threshold
 SNAPSHOT_EVERY = 50  # Number of trials between two stored snapshots of the basal weights (bottom-up plasticity)
 
@@ -45,6 +47,9 @@ HYPERPARAMETERS = {
     'biological': dict(theta_0=2.35, lr_policy=0.004, lr_td=0.00044, lr_ap=0.112, lr_trace=0.256),
     'fast': dict(theta_0=3., lr_policy=0.016, lr_td=0.0035, lr_ap=0.512, lr_trace=0.256),
 }
+
+# Learning rates swept one at a time around the values of the fast-learning regime (see get_learning_rates)
+LEARNING_RATES = ('lr_td', 'lr_policy', 'lr_ap', 'lr_trace')
 
 # Keys identifying various outcomes of the simulation
 Key = Literal[
@@ -91,27 +96,31 @@ class Simulation(Enum):
     """
     Enumeration class for the types of simulations implemented: the model without bottom-up plasticity, with active
     apical dendrites (DEFAULT) or with the apical dendrites inhibited for the first N_TRIALS trials (APICAL_INHIBITION),
-    and the model with one of three bottom-up (basal) plasticity rules (BU_HEBB, BU_BCM, BU_CALCIUM)
+    and the model with one of four bottom-up (basal) plasticity rules (BU_HEBB, BU_BCM, BU_CALCIUM, BU_APICAL)
     """
     DEFAULT = 0
     APICAL_INHIBITION = 1
     BU_HEBB = 2
     BU_BCM = 3
     BU_CALCIUM = 4
+    BU_APICAL = 5
 
 
-BU_SIMULATIONS = (Simulation.BU_HEBB, Simulation.BU_BCM, Simulation.BU_CALCIUM)  # Bottom-up plasticity simulations
+# Bottom-up plasticity simulations
+BU_SIMULATIONS = (Simulation.BU_HEBB, Simulation.BU_BCM, Simulation.BU_CALCIUM, Simulation.BU_APICAL)
 
 # Bottom-up plasticity rules in each learning regime: the bound that keeps the basal weights in [0, 1] ('soft': the
 # update is scaled by (1 - w) w, 'pre': each stimulus keeps its initial total weight onto all neurons, 'l1': each neuron
 # keeps its initial total basal input), the basal learning rate (lr_bas) and the constants of the rule (see
-# simulations.basal_rule)
+# simulations.basal_rule). BU_APICAL has no setting in the fast regime: at the TD learning rate of that regime the state
+# value estimate diverges at every lr_bas
 RULE_HYPERPARAMETERS = {
     'biological': {
         Simulation.BU_HEBB: dict(bound='soft', lr_bas=0.512, theta_bas_0=7.),
         Simulation.BU_BCM: dict(bound='soft', lr_bas=0.128, bcm_tau=200., bcm_e0_scale=0.25),
         Simulation.BU_CALCIUM: dict(bound='pre', lr_bas=0.016, ca_theta_p=1.5, ca_ltd_frac=0.4, ca_gamma_d=2.,
                                     ca_beta=2.),
+        Simulation.BU_APICAL: dict(bound='l1', lr_bas=0.005, xbar_tau=50.),
     },
     'fast': {
         Simulation.BU_HEBB: dict(bound='soft', lr_bas=0.512, theta_bas_0=10.),
@@ -167,7 +176,18 @@ def get_hyperparameters(simulation: Simulation = Simulation.DEFAULT, fast: bool 
     and constants of the bottom-up plasticity rule for the bottom-up plasticity simulations
     """
     regime = 'fast' if fast else 'biological'
+    if simulation in BU_SIMULATIONS and simulation not in RULE_HYPERPARAMETERS[regime]:
+        raise ValueError(f'{simulation} has no setting in the {regime} regime')
     return {**HYPERPARAMETERS[regime], **RULE_HYPERPARAMETERS[regime].get(simulation, {})}
+
+
+def get_bu_simulations(fast: bool = False) -> tuple[Simulation, ...]:
+    """
+    Get the bottom-up plasticity simulations of a learning regime.
+    :param fast: Whether to get those of the fast-learning regime instead of the biological one
+    :return: The bottom-up plasticity simulations with a setting in RULE_HYPERPARAMETERS for the regime
+    """
+    return tuple(s for s in BU_SIMULATIONS if s in RULE_HYPERPARAMETERS['fast' if fast else 'biological'])
 
 
 def is_inhibited(simulation: Simulation, inhibition: bool = False) -> bool:
@@ -194,21 +214,25 @@ def get_n_trials(simulation: Simulation = Simulation.DEFAULT, inhibition: bool =
 
 
 def get_path(simulation: Simulation = Simulation.DEFAULT, fast: bool = False, inhibition: bool = False,
-             theta_0: float = None) -> Path:
+             theta_0: float = None, lr: tuple[str, float] = None) -> Path:
     """
     Get the path for the pickle file containing the simulation outcomes.
     :param simulation: Simulation identifier.
     :param fast: Whether the simulation uses the hyperparameters of the fast-learning regime
     :param inhibition: Whether the apical dendrites are inhibited (only for the bottom-up plasticity simulations)
     :param theta_0: Value of the theta_0 parameter in the theta_0 sweep of the default simulation (None otherwise)
+    :param lr: Name and value of the learning rate in a learning-rate sweep of the default simulation (None otherwise)
     :return: Path of the file containing the simulation outcomes
     """
     results_dir = ROOT_DIR / 'results' / ('fast' if fast else '')
     inhibited = is_inhibited(simulation=simulation, inhibition=inhibition)
+    if (theta_0 is not None or lr is not None) and simulation != Simulation.DEFAULT:
+        raise ValueError(f'The theta_0 and learning-rate sweeps only exist for {Simulation.DEFAULT}')
     if theta_0 is not None:
-        if simulation != Simulation.DEFAULT or fast:
-            raise ValueError(f'The theta_0 sweep only exists for the biological {Simulation.DEFAULT}')
         path = results_dir / f'theta_0/t_{theta_0}.pickle'
+    elif lr is not None:
+        name, value = lr
+        path = results_dir / f'{name}/{name}_{value:g}.pickle'
     elif simulation == Simulation.DEFAULT:
         path = results_dir / 'results_default.pickle'
     elif simulation == Simulation.APICAL_INHIBITION:
@@ -225,20 +249,21 @@ def get_rule_name(simulation: Simulation) -> str:
     """
     Get the name of the bottom-up plasticity rule of a simulation.
     :param simulation: Simulation identifier
-    :return: 'hebb', 'bcm' or 'calcium'
+    :return: 'hebb', 'bcm', 'calcium' or 'apical'
     """
-    return {Simulation.BU_HEBB: 'hebb', Simulation.BU_BCM: 'bcm', Simulation.BU_CALCIUM: 'calcium'}[simulation]
+    return {Simulation.BU_HEBB: 'hebb', Simulation.BU_BCM: 'bcm', Simulation.BU_CALCIUM: 'calcium',
+            Simulation.BU_APICAL: 'apical'}[simulation]
 
 
 def get_runs() -> list[tuple[Simulation, bool, bool]]:
     """
-    All the simulation runs apart from the theta_0 sweep.
+    All the simulation runs apart from the theta_0 and learning-rate sweeps.
     :return: List of (simulation, fast, inhibition) tuples
     """
     runs = []
     for fast in (False, True):
         runs += [(Simulation.DEFAULT, fast, False), (Simulation.APICAL_INHIBITION, fast, False)]
-        for simulation in BU_SIMULATIONS:
+        for simulation in get_bu_simulations(fast=fast):
             runs += [(simulation, fast, False), (simulation, fast, True)]
     return runs
 
@@ -262,13 +287,34 @@ def get_run_name(simulation: Simulation, fast: bool = False, inhibition: bool = 
     return ('fast_' if fast else '') + name
 
 
-def get_thetas_0() -> list[float]:
+def get_thetas_0(fast: bool = False) -> list[float]:
     """
-    The values of theta_0 values that are tried in the theta_0 sweep of the default simulation (at the biological
-    learning rates no seed learns within N_TRIALS trials from theta_0 = 5 on).
+    The values of theta_0 that are tried in the theta_0 sweep of the default simulation: 1 to 5 in steps of 0.5 and the
+    value of the learning regime (at the biological learning rates no seed learns within N_TRIALS trials from
+    theta_0 = 5 on; at the fast ones the state value estimate diverges in every seed up to theta_0 = 2 and in 2 of 10
+    seeds at 2.5).
+    :param fast: Whether to get the values of the sweep in the fast-learning regime instead of the biological one
     :return: List of theta_0 values
     """
-    return [1., 1.5, 2., 2.35, 2.5, 3., 3.5, 4., 4.5, 5.]
+    grid = [1., 1.5, 2., 2.5, 3., 3.5, 4., 4.5, 5.]
+    return sorted(set(grid + [HYPERPARAMETERS['fast' if fast else 'biological']['theta_0']]))
+
+
+def get_learning_rates(name: str) -> list[float]:
+    """
+    The values that are tried in the sweep of a learning rate of the default simulation in the fast-learning regime, the
+    other hyperparameters at the values of the regime: the value of the regime times 2^(k/4) for k = -12, -10, ..., 12
+    (half-octave steps from 1/8 to 8 times) and k = -1 and 1 (quarter-octave steps next to the value of the regime),
+    except k = 0 (the default simulation itself); for lr_trace only the values below 1 (at 1 the presynaptic input to
+    the apical dendrites is the last absolute TD error, above 1 its update overshoots) and 1 itself.
+    :param name: Name of the learning rate (lr_td, lr_policy, lr_ap or lr_trace, see HYPERPARAMETERS)
+    :return: List of the values of the learning rate, in increasing order
+    """
+    exponents = sorted([k / 4 for k in range(-12, 13, 2) if k != 0] + [-1 / 4, 1 / 4])
+    values = [HYPERPARAMETERS['fast'][name] * 2 ** e for e in exponents]
+    if name == 'lr_trace':
+        values = [v for v in values if v < 1.] + [1.]
+    return values
 
 
 def nan_array(shape: tuple[int, ...], dtype: type = np.float64) -> np.ndarray:
@@ -285,7 +331,8 @@ def makedirs() -> None:
     """
     Creates directories in which simulation outcomes and panels are saved.
     """
-    for subdir in ['results/theta_0', 'results/fast', 'panels/svg']:
+    for subdir in ['results/theta_0', 'results/fast/theta_0', 'panels/svg', 'panels/fast/svg'] + [
+            f'results/fast/{name}' for name in LEARNING_RATES]:
         p = ROOT_DIR / subdir
         p.mkdir(parents=True, exist_ok=True)
 

@@ -33,9 +33,12 @@ DEFAULT_HP = dict(
     lr_trace=LR,              # learning rate of the apical afferent trace x_pre_t (main code: LR)
     theta_0=THETA_0,          # scale of the per-neuron plasticity thresholds (as in the mixed model)
     theta_bas_0=None,         # threshold scale seen by the basal rule only (None: same thresholds as the apical rule)
-    rule_sees_gain=True,      # False: the basal rule receives x_som and gains computed with gain 1 (the network keeps
-                              # the real gain); a causal ablation that measures how much of a rule's effect enters
-                              # through the apically modulated somatic rate
+    rule_sees_gain=True,      # False: the basal rule receives x_som and gains computed with gain 1 at the stimulus time
+                              # steps (the network keeps the real gain); the outcome step still hands the rule the real
+                              # outcome-time apical activity, so sliding thresholds and running averages see it (as in
+                              # the September ablation); 'never': gain 1 and resting apical activity at the outcome
+                              # step too. Causal ablations that measure how much of a rule's effect enters through the
+                              # apically modulated somatic rate
     lr_dep=0.,                # rate of an extra subtractive depression term added to any rule's update (0: off):
                               # - lr_dep * x_in * relu(theta_bas - x_som) ('thr', the depression half of hebb, i.e.
                               # every synapse active on a neuron below its basal threshold is depressed by the gap)
@@ -44,6 +47,12 @@ DEFAULT_HP = dict(
     theta_gate=None,          # per-neuron plasticity gate on the basal rule's update: None (off), 'pot' (potentiation
                               # only on neurons with x_som > basal threshold, depression untouched) or 'all' (no
                               # basal plasticity at all on neurons below the basal threshold)
+    rule_frozen_inputs=(),    # causal ablation only: indices of the inputs (0 tone, 1 T2, 2 T1, then the distractors)
+                              # whose synapses the basal rule leaves unchanged (their update is set to 0; a
+                              # renormalizing bound still rescales them); () = main code
+    rule_start_trial=0,       # causal ablation only: the basal rule's updates are dropped before this trial (the rule
+                              # is still called, so its running averages and sliding thresholds run from the first
+                              # trial); 0 = main code
     n_noise=N_Z_BU_PLASTICITY,  # number of distractor stimuli
     n_z=N_Z,                  # number of pyramidal neurons
     init='random',            # 'random' (L1-normalized rand**init_power, as in the mixed model), 'identity',
@@ -59,6 +68,14 @@ DEFAULT_HP = dict(
     init_norm='neuron',       # normalization of a random init: 'neuron' (each neuron's afferents sum to 1, as in the
                               # mixed model) or 'stimulus' (each stimulus's outgoing weights across neurons sum to
                               # 1, as in the identity model, which bounds the population drive per stimulus)
+    init_task_gain=1.0,       # causal test only: multiply the initial weights of the task inputs (init_task_rows 'all':
+                              # tone and textures; 'textures': the textures only) by this factor, then rescale each
+                              # neuron's afferents to their previous total and clip again (no random numbers used); the
+                              # thresholds follow the new weights; 1.0 = main code
+    init_task_rows='all',     # which task inputs init_task_gain scales, 'all' or 'textures'
+    init_task_mode='scale',   # 'scale': init_task_gain multiplies each task weight; 'shift' (textures only): every
+                              # weight as under 'scale' except that the two textures split their boosted sum so that
+                              # each neuron keeps its initial difference w_T1 - w_T2 (before the clip)
     w_bas_scale=1.0,          # stability test of the control: multiply the initial basal weights by this factor after
                               # the plasticity thresholds are set (the population drive grows as under sharpening
                               # while the thresholds stay); 1.0 = main code
@@ -113,6 +130,19 @@ def get_params_bu(hp: dict):
         w_bas = w_bas * float(hp.get('init_scale', 1.0))  # SANDBOX
         if hp.get('init_clip') is not None:  # SANDBOX
             w_bas = torch.clamp(w_bas, max=float(hp['init_clip']))
+        if float(hp.get('init_task_gain', 1.0)) != 1.0:  # SANDBOX: causal test, see DEFAULT_HP
+            rows = [0, T2_IDX, T1_IDX] if hp.get('init_task_rows', 'all') == 'all' else [T2_IDX, T1_IDX]
+            total = w_bas.sum(0, keepdim=True)
+            diff = w_bas[T1_IDX] - w_bas[T2_IDX]
+            w_bas[rows] = w_bas[rows] * float(hp['init_task_gain'])
+            w_bas = w_bas * total / w_bas.sum(0, keepdim=True)
+            if hp.get('init_task_mode', 'scale') == 'shift':
+                if rows != [T2_IDX, T1_IDX]:
+                    raise ValueError("init_task_mode 'shift' needs init_task_rows 'textures'")
+                tex_sum = w_bas[T1_IDX] + w_bas[T2_IDX]
+                w_bas[T1_IDX], w_bas[T2_IDX] = (tex_sum + diff) / 2, (tex_sum - diff) / 2
+            if hp.get('init_clip') is not None:
+                w_bas = torch.clamp(w_bas, max=float(hp['init_clip']))
         probs = torch.tensor([1, 0.5, 0.5] + noise_probs) / N_TIME_STEPS
         thetas = hp['theta_0'] * torch.matmul(probs[:], w_bas) + BKG
     elif hp['init'] == 'identity':
@@ -160,6 +190,9 @@ def simulate_seed_bu(hp: dict = None, seed: int = 0) -> dict:
     state['_e_x_som_sq_init'] = (torch.matmul(stim_probs, (w_bas + BKG) ** 2)
                                  + torch.clamp(1 - stim_probs.sum(), min=0) * BKG ** 2)
     state['_w_max_init'] = w_bas.max(0).values + BKG  # SANDBOX: strongest un-gained response, used by calcium
+    # SANDBOX: expected x_som per time step at initialization (gain 1, outcome step included), used by burst to start
+    # the running average of its somatic term at its fixed point without apical activity
+    state['_e_x_som_init'] = torch.matmul(stim_probs, w_bas) + BKG
     hp['_row_sums'] = w_bas.sum(1, keepdim=True).clone()  # SANDBOX: initial outgoing weight per stimulus, for bound 'pre' / 'both'
     hp['_col_sums'] = w_bas.sum(0, keepdim=True).clone()  # SANDBOX: initial total input per neuron, for bound 'l1' / 'both'
     # SANDBOX: the basal rule may use its own threshold scale; the apical rule always keeps thetas
@@ -261,7 +294,7 @@ def simulate_seed_bu(hp: dict = None, seed: int = 0) -> dict:
             # Update state value estimator, sensory dendrite afferent and sensory dendrite synaptic weight
             dw_weights += learning_rate * dv_hat_now * z_h[j, :] * K_V
             w_ap = torch.clamp(w_ap + lr_ap * x_pre_t[t] * (x_som - thetas) * (1 - w_ap) * w_ap, min=0, max=1)
-            if hp.get('rule_sees_gain', True):  # SANDBOX
+            if hp.get('rule_sees_gain', True) not in (False, 'never'):  # SANDBOX
                 dw = rule(w_bas, x_in, x_som, x_bas, x_ap, gains, thetas_bas, hp, state)
             else:  # SANDBOX: ablation, the rule sees the un-gained rate and resting apical variables
                 dw = rule(w_bas, x_in, x_bas, x_bas, torch.full_like(x_ap, 1. / MAX_GAIN), torch.ones_like(gains), thetas_bas, hp, state)
@@ -272,6 +305,11 @@ def simulate_seed_bu(hp: dict = None, seed: int = 0) -> dict:
             if dw is not None and hp.get('theta_gate') is not None:  # SANDBOX: per-neuron gate on the basal update
                 above = (x_som > thetas_bas).float()
                 dw = dw * above if hp['theta_gate'] == 'all' else torch.where(dw > 0, dw * above, dw)
+            if dw is not None and len(hp.get('rule_frozen_inputs', ())):  # SANDBOX: causal ablation
+                dw = dw.clone()
+                dw[list(hp['rule_frozen_inputs'])] = 0.
+            if j < hp.get('rule_start_trial', 0):  # SANDBOX: causal ablation, the rule switched on late
+                dw = None
             w_bas = apply_bound(w_bas, dw, hp)  # SANDBOX
             x_pre_t[t] += tlr * (abs(dv_hat_now.item()) - x_pre_t[t])
 
@@ -316,8 +354,14 @@ def simulate_seed_bu(hp: dict = None, seed: int = 0) -> dict:
         x_som = gains * x_bas_background
         # SANDBOX: let the rule's slow variables see the outcome-time apical activity (no presynaptic input, so
         # every rule returns dw = 0 here)
-        w_bas = apply_bound(w_bas, rule(w_bas, torch.zeros(n_inputs), x_som, x_bas_background,
-                                        x_ap.expand(n_z), gains.expand(n_z), thetas_bas, hp, state), hp)
+        if hp.get('rule_sees_gain', True) == 'never':  # SANDBOX: ablation, the rule sees rest at the outcome step too
+            x_ap_rest = torch.full((n_z,), 1. / MAX_GAIN)
+            dw = rule(w_bas, torch.zeros(n_inputs), x_bas_background, x_bas_background, x_ap_rest, torch.ones(n_z),
+                      thetas_bas, hp, state)
+        else:
+            dw = rule(w_bas, torch.zeros(n_inputs), x_som, x_bas_background, x_ap.expand(n_z), gains.expand(n_z),
+                      thetas_bas, hp, state)
+        w_bas = apply_bound(w_bas, None if j < hp.get('rule_start_trial', 0) else dw, hp)  # SANDBOX: rule_start_trial
         dw_weights += learning_rate * (reward - r_pred) * z_h[j, :] * (x_som - BKG)
         actor.update(reward=reward.item(), x_som=x_som)
 

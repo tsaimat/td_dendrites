@@ -648,3 +648,425 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
   control4, and fs12cd gets the range -10 to 10. The runs form three dimensions (protocol, biological or fast
   learning hyperparameters, rule), organised as `DEFAULT` / `APICAL_INHIBITION` plus three `BU_*` members, with
   inhibition and fast learning as options of `simulate_seeds` and `get_path`.
+- Rules with an explicit apical factor re-tuned on control4 (user, 2026-10-18): `gated_hebb`, `burst` and `us` on top of
+  the fixed control4 (`theta_0` 2.35, `lr_td` 0.00044, `lr_policy` 0.004, `lr_ap` 0.112), only each rule's own bound,
+  `lr_bas` and constants free, scored like hebb4, bcm4 and calcium4 (Smith, every seed expert and none diverged in both
+  protocols). User's choices: the running averages start at rest (`g_bar` 1, `p_bar` at zero apical activity),
+  `burst_kappa` > 0 is explored with `p_bar` starting at its fixed point at gain 1, and no ungated depression term.
+  - Code: `burst` reads `apical_norm(x_ap)` (0 at rest) instead of `x_ap`, because the inhibited outcome step sets
+    `x_ap` to 0, below the resting 0.1, so with `x_ap` the average sank below rest during inhibition and every active
+    synapse was potentiated (up to 0.11 of weight in a 40-trial test); without inhibition the new rule equals the old
+    one at `lr_bas` / 0.9 (checked to 2e-6). `p_bar` starts at `burst_kappa` times the expected somatic rate per step at
+    gain 1 and the initial weights (`_e_x_som_init` in `simulate.py`), `g_bar` at 1 (bit-identical to the old start,
+    which copied the first step's gain, in both protocols). With `burst_kappa` 0 the three rules leave `w_bas` exactly
+    unchanged during inhibition (every run: mean |dw| 0 at the lift). `check_reproduces` 16/16 identical. New scripts
+    `scan_gated.py` (control4 base, the main code's 4000-trial inhibition protocol, detector and weight metrics,
+    optional Smith traces) and `tab_gated.py`; runs in `sandbox/results/gated4/` (`pilot`, `stage1` to `stage6`).
+  - Search: pilot (2 seeds; the September rates diverge or block learning), coarse screen of 120 settings on seeds 0-2
+    (bounds soft, `l1`, `pre`; `lr_bas` 0.0005 to 0.128; `gated_hebb` with `theta_bas_0` 2.35 or 7 and `gh_post` `som`
+    or `bas`; `burst` with `burst_kappa` 0 or 0.2 and `burst_tau` 20 or inf; `us` with `us_tau` 5 or inf), three rounds
+    on seeds 0-9 (60 settings: `gated_hebb` up to `lr_bas` 2.048, `theta_bas_0` 28 and `gate_power` 0.25 to 2; `us_tau`
+    5 to 100; `burst_tau` 5 to 100, `burst_kappa` 0.1), both protocols for 8 finalists on seeds 0-9 and 6 on seeds
+    10-39.
+  - Results (seeds 0-9, no inhibition / after the lift; control 1100 / 1155): `gated_hebb` (`l1`, `gh_post` `bas`,
+    `lr_bas` 0.512, `theta_bas_0` 14) 641 / 638 at `gate_power` 1, 441 / 431 at 0.5, 400 / 401 at 0.25 (rank-sum against
+    the control p 0.00016 each); `us` (`l1`, `us_tau` 5, `lr_bas` 0.0005) 1011 / 1079 (p 0.26 / 0.23); `burst` (soft,
+    `burst_kappa` 0, `burst_tau` 20, `lr_bas` 0.002) 1060 / 1097 (p 0.6 / 0.36; `burst_kappa` 0.1, `lr_bas` 0.001: 1061
+    / 1104). Seeds 10-39 (every seed expert, none diverged): control 1129 / 1166, `gated_hebb` 662 / 638, 432 / 420 and
+    403 / 379 (p below 1e-9), `us` 1023 / 1033 (p 0.075 / 0.018), `burst` 1063 / 1077 (p 0.23 / 0.085). Over all 40
+    seeds `us` is about 10 percent faster than the control (1020 / 1044 against 1122 / 1163, p 0.048 / 0.01) and `burst`
+    is not (1062 / 1082, p 0.23 / 0.056). Only `gated_hebb` at `gate_power` 0.25 differs between the protocols (379
+    after the lift against 403 on seeds 10-39, p 0.028; 0.069 on all 40).
+  - `gated_hebb` needs the un-gained drive and `l1`: with `gh_post` `som` it diverges or fails at every `lr_bas` above
+    0.002 (the gain lifts nearly every active synapse over any threshold at the gated steps); the soft bound gives at
+    best 913 (`gate_power` 1) and 1133 at 0.5 (9 of 10), `pre` diverges above 0.008. With `l1` the renormalization of
+    the potentiated neuron moves as much weight as the rule itself, every neuron keeps input (no neuron below 0.05;
+    hebb4 leaves 11 percent without input) and sharpens (mean largest weight 0.88 at `gate_power` 1, 1.00 at 0.25,
+    control 0.66); texture detectors 5.0 / 7.3 / 8.5 percent at `gate_power` 1 / 0.5 / 0.25 (control 4.5), tone
+    detectors 0.3 to 1.4 (control 2.2). At `gate_power` 1 more `lr_bas` or `theta_bas_0` over-prunes (`theta_bas_0` 20:
+    761; `lr_bas` 1.024: 2 seeds lost).
+  - The gate power trades speed against plasticity near rest: the share of the rule's own change made at gain < 1.1
+    (instrumented seeds 0-2, `gated_diag.py` in the scratchpad) is 10, 30 and 57 percent at `gate_power` 1, 0.5 and
+    0.25, against 95 (hebb4), 88 (bcm4) and 84 (calcium4). Outside inhibition the gain is almost never exactly 1
+    (`x_pre_t` is positive at every step once the value estimate moves and every neuron keeps some apical weight; under
+    1.1 percent of any rule's change happens below gain 1.000001), so `a ** gate_power` with a small power acts at
+    near-1 gains and approaches an ungated rule on `x_bas` with `l1`; it stays exactly silent only while the apical
+    activity is exactly 0 (the first trials and apical inhibition).
+  - `us` and `burst` with a finite time constant depress at gain 1: the outcome step raises every neuron's gain when the
+    outcome is surprising and lifts `g_bar` to about 1.4 within 20 trials (`p_bar` likewise), so every gain-1 step
+    depresses the active synapses in proportion to the drive (`us`: 35 percent of its change, all depression; the
+    September finding (3) above, now at control4). At the September rates (`lr_bas` 0.032 and more) this prunes the
+    total input to 0.2 to 1.1 per neuron and blocks learning. With an infinite time constant they only potentiate: at
+    `lr_bas` 0.002 they are at the control's speed (soft) or fail (`l1`, `pre`), higher rates diverge (soft, `pre`) or
+    fail (`l1`). `us` under `l1` is erratic in `lr_bas`: 0.002 and 0.032 fail, 0.001 reaches 946 but forms 18 to 22
+    percent tone detectors and loses 4 of 10 seeds after the lift (performance falls to 0.72 by trial 4000), 0.008
+    reaches 716 (9 of 10) but ends at performance 0.77. `burst` adds drive (total input 2.07) and potentiates the tone
+    as much as each texture; `burst_tau` 5 to 100 and `burst_kappa` 0.1 change nothing, `burst_kappa` 0.2 loses seeds,
+    `l1` and `pre` lose seeds or diverge.
+  - The gated rules learn as fast after the lift as without inhibition (p 0.73 to 0.94), so unlike hebb4 and calcium4
+    (330 after the lift) they get no head start from the blind trials.
+- What the bottom-up rules get from the apical signal (user, 2026-10-19: what the gate power is, which bounds, why `us`
+  and `burst` do not help, and how much of the speed-up is denoising rather than apical selection; page
+  https://claude.ai/artifact/TEQc33iyRMba3qj8rfNQQM). Seeds 0-9 without inhibition at the control4 rates.
+  - Code: `rule_sees_gain='never'` hands the rule gain 1 and resting apical activity at the outcome step too (`False`
+    keeps the outcome-time activity as in September, so a sliding threshold or running average still sees the gain);
+    `rule_frozen_inputs` sets the rule's update of the listed inputs to 0 (both causal ablations only); `scan_gated`
+    records `det_both` (neurons with both texture weights above 0.5). `check_reproduces` 16/16 identical. Runs in
+    `sandbox/results/gated4/ablation.jsonl` and `freeze.jsonl`.
+  - Gain hidden from the rule (`rule_sees_gain='never'`, the network keeps it): hebb4 406 -> 410, bcm4 458 -> 461,
+    calcium4 438 -> 439 trials (per seed +3.8, +3.2, +0.9, Wilcoxon p 0.057, 0.16, 0.37; under 1 percent of their 640
+    to 690-trial speed-up). With the gain hidden, lower thresholds are faster than the tuned rules: hebb `theta_bas_0` 5
+    301 (3.5 diverges in all seeds), calcium `ca_theta_p` 1.0 388. In September (old model) the gain carried about 40
+    percent of hebb's advantage; at control4 none. bcm4 forms fewer texture detectors without the gain (5.9 against
+    9.6 percent at trial 1800, as under inhibition), after its expert trial. Gated Hebb without the gate (`gate_power`
+    0) 389 at `lr_bas` 0.128 and 466 at 0.512, against 400 at `gate_power` 0.25 and 641 at 1.
+  - Timing (main-code runs): fewer than 3 percent of the neurons have gain > 1.1 at touch in the first 200 trials with
+    any rule; the apical recruitment peaks near each rule's expert trial (55 to 78 percent of the neurons) and around
+    trial 800 in the control. Instrumented re-runs (the rule also evaluated on the un-gained drive with a shadow state,
+    `scratchpad decomp.py`; the parts sum to the weight change to 1e-7): the gain's share of the rule's change up to
+    each seed's expert trial is 0.7 (hebb4), 13.7 (bcm4) and 2.8 percent (calcium4), 9.3, 22.0 and 6.7 over 1800
+    trials; hebb4 makes 86 percent of its 1800-trial change before its expert trial. hebb4's gain part,
+    `lr x_in (gain - 1) x_bas`, only potentiates, mostly distractors coinciding with the cue or touch; bcm4's
+    potentiates the textures (+43 per seed) and the tone (+10) of its 119 recruited neurons and depresses their
+    distractors (-30), and its sliding threshold, raised by the outcome-step gain, depresses everything in the others:
+    the selective amplification the user had in mind, with no effect on the speed.
+  - Speed tracks early pruning: the expert trial against the inputs per neuron above 0.05 at trial 300 over 16
+    variants (every seed expert) has Pearson r 0.91, Spearman 0.87; `us` and `burst` stay at 7.35 (control 7.37),
+    gated Hebb at `gate_power` 1 at 5.6, the fast rules at 1.5 to 3. At trial 1800: control 7.4, `us` 6.9, `burst` 7.7,
+    gated Hebb 4.8 (`gate_power` 1) and 2.2 (0.25), hebb4 1.5, bcm4 1.9, calcium4 2.1.
+  - Why `us` and `burst` do not help: the apical input is `apical_transfer(w_ap x_pre_t[t])` with one `x_pre_t` per
+    time step for all trials, so at touch it is the same in go and no-go trials and the same neurons get it at the
+    cue; a rule signed by the gain potentiates the tone and both textures together (`burst`: 40 percent of its change
+    to the textures, 20 to the tone, 32 to coinciding distractors). At trial 1800 their texture detectors are less
+    selective (|w_T1 - w_T2| / (w_T1 + w_T2) 0.73 and 0.83, control 0.92, the competitive rules 0.92 to 1.00) and the
+    S12d go- and no-go-selective counts equal the control's. With the tone frozen (`rule_frozen_inputs` [0]) `us` at
+    `lr_bas` 0.002 no longer fails (931, rank-sum p 0.049; 25.6 percent texture detectors) but at 0.008 only 4 of 10
+    seeds are expert; `burst` at 0.008 no longer diverges (1028, 8 of 10) and at 0.032 all seeds diverge.
+- Apical-deviation rule (user, 2026-10-19: the apical signal should dictate the bottom-up plasticity and its benefit,
+  task inputs becoming stronger than the distractors; rule dw_k = lr x_k (x_ap - x_ap_bar), or with the gain; page
+  https://claude.ai/artifact/UuEfGsvBYtXegFdyGShyqz). Control4 rates, no inhibition.
+  - Code: rule `apdev` in `sandbox/rules.py` (`apdev_tau`, `apdev_signal` 'gain' or 'x_ap', `apdev_bar_outcome`,
+    `apdev_mult`); `init_task_gain` and `init_task_rows` in `simulate.py` (causal test: scale the initial tone and
+    texture weights, or the textures only, and rescale each neuron to its previous total); `task_share` and
+    `n_inputs` metrics in `scan_gated.py`. The gain is 10 x_ap above rest, so the x_ap version is the gain version
+    at 10 lr (weights equal to 1e-7 without inhibition); during inhibition the x_ap version potentiates (the
+    inhibited outcome's x_ap of 0 pulls its low-pass below rest) and the gain version is silent, so the gain was
+    used. `check_reproduces` 16/16 identical. Runs in `sandbox/results/apdev4/` (`stage1` screen, `stage2`,
+    `stage2b`, `stage3`, `oracle`).
+  - Screen (soft, `l1`, `pre`, clamp x `lr_bas` 0.0005 to 0.128 x `apdev_tau` 5, 20, 100, inf; seeds 0-2): only the
+    soft bound learns (7 of 20 settings); `l1` licks in every trial (10 to 14 percent tone detectors), `pre` loses
+    every detector, clamp loses most of the input, `apdev_tau` inf diverges from `lr_bas` 0.002. Seeds 0-9: soft,
+    `apdev_tau` 20, `lr_bas` 0.001 1022 +- 190 (rank-sum p 0.5 against the control's 1100), 0.002 1001 to 1015 (one
+    seed lost), 0.004 1183 (total input 1.07), 0.008 and more fail (total input 0.2 to 0.6).
+  - Why: the outcome step's apical activity (in every neuron) lifts g_bar to 1.23 by trial 20 and 1.44 by trial 80
+    (`apdev_tau` 20), so before the cue and touch signal exists the rule depresses every active synapse by how
+    often it is active: the tone (every trial) most, the textures as much as the average distractor (task share 9.1
+    to 8.7-8.9 percent by trial 600; corrected 2026-10-19, see the next section). Then the apical input at
+    touch is the same for go and no-go (one `x_pre_t` per step), so both textures gain together: texture share 6 to
+    12-24 percent, but the per-neuron contrast |w_T1 - w_T2| goes from 0.09 to 0.115 at best (0.03 under `l1`) and
+    up to 24 percent of the neurons respond to both textures; the tone gains as much (cue).
+  - Variants (seeds 0-9): tone frozen (soft, 0.002) 1004; `l1` with the tone frozen 0 of 10 (24 percent
+    both-texture neurons); outcome kept out of g_bar (ablation) 0 of 8 settings learn (soft diverges, 67 to 98
+    percent of the texture detectors respond to both); update times the weight (`apdev_mult`, `l1`) at most 3 of 10
+    (0.008), and from 0.032 the task inputs shrink to 0.
+  - The benefit itself is real: the control started with each neuron's texture weights x2, x4, x8 (total kept, no
+    plasticity) learns in 504, 286 and 205 trials (contrast 0.14, 0.21, 0.30); tone and textures x2, x4, x8: 568,
+    351 and 363 (one seed 1606).
+- Faster rates for `apdev` (user, 2026-10-19: which rates were tried, and would faster ones help more; page
+  https://claude.ai/artifact/5zmyn78X7HjMjvGcppuyHG). Soft bound, `apdev_tau` 20, control4 rates, no inhibition,
+  seeds 0-9.
+  - Code: `rule_start_trial` (causal ablation: the rule's updates dropped before this trial, its running averages run
+    from the first) and `init_task_mode` `'shift'` (with `init_task_gain` and `init_task_rows` `'textures'`: every
+    weight as under `'scale'` except that the two textures split their boosted sum so that each neuron keeps its
+    initial w_T1 - w_T2) in `sandbox/simulate.py`; `check_reproduces` 16/16 identical. Runs `stage4` (switched on at
+    trial 500, equal boost), `stage4b` (rates from trial 1), `stage4c` (switched on at trial 500, tone frozen) in
+    `sandbox/results/apdev4/`; time courses from the decomposition script with g_bar recorded (scratchpad).
+  - From trial 1, `lr_bas` 0.0005 / 0.001 / 0.002 / 0.004 / 0.008 / 0.016 / 0.032 / 0.128: 1050, 1022, 1015 (9 of
+    10), 1183 (9), 1623 (3), 1693 (1), none, 1658 (1) (control 1100). Switched on at trial 500: 1046 at 0.001, then 4,
+    1, 0, 0, 0 of 10 seeds expert at 0.002 to 0.032 (3, 2, 1, 1, 0 runs diverge). Switched on at trial 500 with the
+    tone frozen: 953 at 0.002 (9 of 10, p 0.45), 1 of 10 at 0.004, none at 0.008 and 0.032; at 0.004, 17.5 percent
+    of the neurons have both texture weights above 0.5, out of 18.5 percent with either.
+  - Why: (1) g_bar reaches about 1.45 within 100 trials (the outcome step, gain near 9, in every neuron) and no
+    neuron's touch gain exceeds it before trial 500, so the rule only depresses, by activity: the tone most, the
+    textures and the average distractor (each about half the trials) alike; total input per neuron at trial 500
+    1.73, 1.43, 1.13, 0.50 at 0.001, 0.004, 0.008, 0.032 (1.84 at the start). (2) The depression keeps apical weight
+    from growing: touch gain above g_bar at trial 1000 in 21, 6, 1, 0 percent of the neurons; the others keep
+    depressing to the end (g_bar 1.2 to 1.5). (3) Switched on at trial 500, 0.008 lifts the mean texture weight
+    1.9-fold and the tone 1.8-fold while the distractors fall to 0.4; both textures of a neuron run to 1 under the
+    soft bound and the texture preference |w_T1 - w_T2| / (w_T1 + w_T2) (neurons with w_T1 + w_T2 > 0.1) falls from
+    0.77 to 0.13 (10 percent both-texture neurons).
+  - Equal boost (control, no plasticity; same texture sum, tone and distractor weights as the boosted starts, initial
+    difference kept): x2 1240 (7 of 10; p 0.017 against the control, 0.00018 against the ratio-kept x2 at 504), x4
+    and x8 no seed expert, every seed licks on at least 99 percent of the no-go trials at trial 1800, and 54 / 71
+    percent of the neurons end at full gain (control 25). So strengthening the textures against the distractors helps
+    only with each neuron's preference kept; the 2026-10-19 page's "premise holds" is corrected on the new page.
+  - Mechanism: `Agent.update` is reward-weighted without a baseline (hit +1, false alarm -0.5), so while the network
+    licks on every trial (control: 92 to 99 percent of the no-go trials licked in trials 100 to 900) a neuron's policy
+    weight drifts by about H_go - 0.5 H_nogo (H: somatic activity summed over the trial), and only neurons with a
+    no-go activity above twice the go activity vote for withholding (seed 0, trials 300-500: policy change against
+    go - 0.5 no-go texture response r 0.84 control, 0.92 equal x4). The equal boost pulls each ratio towards 1 (seed
+    0 at x4: relative selectivity of the responsive neurons 0.41 to 0.17, neurons with no-go above twice go 14.6 to
+    8.9 percent).
+- Apical rule without g_bar, with normalization (user, 2026-10-19: remove the bar term and add a normalization, to
+  remove the depression; page https://claude.ai/artifact/KcNfjUBvFmBdUUXMH2htJt). Control4 rates, no inhibition.
+  - Code: `apdev_bar` in `sandbox/rules.py` (`False`: dw = lr x_in s, no low-pass; `apdev_tau` inf gives the
+    rest-subtracted s - rest); `check_reproduces` 16/16 identical. Runs `nobar_screen` (seeds 0-2), `nobar_stage2`
+    (0-9), `nobar_stage3` (10-39) in `sandbox/results/apdev4/`; time courses from the decomposition script.
+  - Screen (no baseline or rest subtracted x `l1`, `pre`, `both` x additive or x w x `lr_bas` 0.00003 to 0.03, seeds
+    0-2): additive fails under every normalization (no baseline from 0.0001, rest subtracted from 0.0003): at rest
+    every active synapse gains lr per step and the normalization pulls each neuron's weights towards the input
+    frequencies (inputs above 0.05 per neuron 7.4 to 15-31, texture preference 0.77 to 0.23 at `l1` 0.0001, no
+    detectors). x w with `pre` is exactly silent at rest (a common factor on an input is undone by the per-input
+    normalization; 1e-16 after 300 trials at gain 1), with `both` nearly (5e-6), with `l1` not (0.011; the tone takes
+    over, 17-23 percent tone detectors at 0.001, seeds lost from 0.0003). With `pre` the rest-subtracted and the
+    no-baseline versions are identical.
+  - Speed, paired by seed (same initial weights and stimuli; the rule draws no random numbers): x w, `pre`, 0.003 1011
+    against the control's 1122 on seeds 0-39, faster in 40 of 40 seeds by 111 trials (10 percent, signed-rank p
+    2e-12); `both` 0.003 1018, 40 of 40, 104; `pre` 0.001 to 0.005 every seed faster (67 to 92 trials, seeds 0-9);
+    tone frozen 102. Higher rates add nothing (`pre` diverges from 0.01, `both` 0.01 to 0.02 only 7 and 5 of 10
+    faster). Correction: paired, the rule with g_bar (soft, `apdev_tau` 20, 0.001) is faster in 36 of 40 seeds by 99
+    trials (p 1e-7); the earlier pages' unpaired rank-sum (p 0.5) called it not significant.
+  - Weights (seeds 0-9, x w): nothing changes before trial 600 (no depression); the touch gain rises from 1.05 to 2.3
+    between trials 600 and 900, and by trial 1000 (`both`) to 1200 (`pre`) all texture and tone weight sits on the
+    14-16 percent of neurons that end with w_ap above 0.5 (control 25): textures 1.8 / 1.9 and tone 2.3 / 2.6 times
+    their start there, 0 elsewhere; distractors there 2.8 (`pre`: those neurons' gain is above 1 at every step, total
+    input 1.85 to 4.6) or 0.53 (`both`); texture preference kept (0.77 to 0.77 / 0.71, at most 1 percent both-texture
+    neurons). `l1`, rest subtracted, 0.003: tone 5.4, textures 3.6, distractors 0.07 there, preference 0.56.
+  - Why only 10 percent: the touch-signal onset (first 25-trial bin with mean touch gain above 1.2) is trial 720 +- 50
+    in the control and 708 +- 51 with the rule (`pre` 0.003, seeds 0-9); the rule shortens the time from onset to
+    expert (380 +- 242 to 300 +- 216 trials) but cannot move the onset, which follows the value learning.
+  - The user's (g - 1) version (2026-10-19), dw_ki = lr x_k (g_i - 1) (`apdev_tau` inf), seeds 0-9, paired: additive
+    under `l1`, `pre` or `both` at `lr_bas` 0.00001, 0.00003, 0.0001 is faster in 0 of 10 seeds; 1, 2 and 6 to 8
+    seeds never expert, the others 20 to 60 (two lower rates) and 90 to 340 trials (0.0001) slower; soft bound (no
+    normalization) +2 trials at 0.0001, 1 seed lost at 0.0003, 5 at 0.001. The screen's means of about 930 averaged
+    only the 2 of 3 seeds that learned. Mechanism: the touch gain is the same in go and no-go trials, so both textures
+    of a neuron get the same increment; the texture preference falls from 0.77 to 0.42 (`pre` 0.00003) and 0.16
+    (`pre` 0.0001) by trial 1800, texture detectors 4.5 to 0 to 4.0 percent (the equal-boost start). Times the
+    weight, dw = lr x (g - 1) w with `pre` at 0.003, is faster in 39 of 40 seeds by 111 trials (1011 against 1122, p
+    4e-12; the no-baseline x w rule within 3 trials, identical in 33 of 40 seeds). Run `nobar_stage4`.
+  - Slower additive (g - 1) rates and where the weights end (user, 2026-10-20: even slower plasticity, and do T1, T2
+    and the tone all end potentiated with no selectivity left?). Recorded re-runs (the rule wrapped only to read x_som
+    and the gain at the cue and touch steps; the control and the three earlier rates reproduce the scan's expert
+    trials exactly), seeds 0-9, paired with the control: `pre` 3e-6 11 trials slower (8 of 10 seeds slower, none
+    faster), 1e-6 2 (2 faster, 5 slower), 3e-7 the control (6 seeds identical, p 0.85); `l1` 3e-6 12, 1e-6 3; `both`
+    3e-6 7 (seed 9 lost), 1e-6 3. The seeds lost at 1e-5 and 3e-5 are the control's slowest (9 at 1705, 0 at 1380).
+    End state at 1e-4 (`pre`): on the 20 percent of neurons that end with w_ap above 0.5 the tone, T1 and T2 weights
+    end 1.85, 1.42 and 1.37 times their start, on the others 0.3 times (each input's total is fixed); within a
+    recruited neuron the three converge (weakest 0.01 to 0.20, strongest 0.43 to 0.32; 78 percent of their task
+    synapses up); texture preference 0.77 to 0.16, tone against texture weights of the recruited neurons 0.78 to 0.15.
+    Responses in the last 100 trials: go/no-go contrast |go - nogo| / (go + nogo) of the texture-responsive neurons
+    0.41 to 0.14, cue/touch contrast 0.38 to 0.24; go- or no-go-selective 22.5 to 12.9 percent of the neurons,
+    cue-selective 8.6 to 5.1, unresponsive 52.7 to 76.7 (the gain keeps leftover differences above the 0.2
+    criterion). 3e-5: preference 0.42, contrast 0.28, 19.2 percent selective; 1e-5: 0.63, 0.36, 21.1; 3e-6: 0.73,
+    0.39, 22.0; 1e-6 and below as the control. So selectivity is reduced, not gone, and only where learning suffers.
+    The x w rule (`pre` 0.003; seeds 0-9 92 trials faster, 10 of 10) keeps the preference (0.77, response contrast
+    0.50) but leaves 84 percent of the neurons unresponsive to the textures (control 53): all task input sits on the
+    16 percent it recruits. Page section on https://claude.ai/artifact/KcNfjUBvFmBdUUXMH2htJt (v3).
+  - Times the basal drive instead of the weight (user, 2026-10-20): dw_ki = lr x_k (g_i - 1) x_bas_i (`apdev_mult`
+    `'bas'`, `apdev_tau` inf; x_bas is the un-gained basal drive with the background; exactly silent at gain 1;
+    `check_reproduces` 16/16 identical). Seeds 0-9 paired: `pre` 0.0001 / 0.0003 / 0.001 5 / 12 / 6 trials faster on
+    the expert seeds with 0 / 1 / 3 seeds never expert, 0.003 and above no seed expert; `both` (0.0003 to 0.003) 40
+    to 110 and `l1` 28 to 159 trials slower with 1 to 9 seeds lost, 0.01 and above none expert; soft bound 0.001 /
+    0.003 22 / 31 trials faster (0 / 1 lost), 0.01 and above none expert. Seeds 0-39: `pre` 0.0001 1115 against the
+    control's 1122 (32 faster, 3 slower, 7 trials, p 5e-5), 0.0003 1094 (34 faster, seed 9 lost, 13 trials, p 7e-4);
+    soft 0.001 1088 (39 of 40 faster, 34 trials, p 1e-10), 0.003 1061 (4 seeds lost, 40 trials, p 0.015); the x w
+    rule (1011) is faster than each of them in 39 or 40 seeds, by 73 to 104 trials. Mechanism: x_bas has a floor (the
+    background 0.01 plus the distractors coinciding with the step, about 0.05); on the recruited neurons the preferred
+    texture is about 80 percent of x_bas at its touch and the other texture 14 percent (initial weights, medians), so
+    the weak texture's update is nearly the additive one and the preference falls (`pre`: 0.71, 0.48, 0.18 at 0.0001,
+    0.0003, 0.001). Distractors coinciding with the cue or touch get the same increment as the tone or texture, so
+    under `pre` the recruited neurons' distractor weight grows 1.2, 1.7 and 3.7 times, and the seeds lost at 0.001
+    learned and then degraded (seed 3: hit 0.97 and CR 0.94 in trials 900-1500, 0.78 and 0.75 at the end). `both`
+    stops the distractor growth but still erodes the preference; `l1` lets the tone grow (cue-selective neurons up to
+    19 percent, control 8.6). The soft bound brings the weight factor back (dw w (1 - w)): preference 0.79, population
+    as in the control (48 percent texture-responsive, 23 percent selective), tone and textures about twice their
+    start on the recruited neurons. x_bas minus a threshold is gated Hebb at gate power 1 (657 trials, `l1`). Per-seed
+    expert trials in `sandbox/results/apdev4/xbas.jsonl` (and the slower additive rates in `slow.jsonl`); page section
+    on https://claude.ai/artifact/KcNfjUBvFmBdUUXMH2htJt (v4).
+  - Why the x_bas rule fails under per-neuron L1 (user, 2026-10-21: in naive no plasticity, then the apical signal
+    at cue and touch strengthens those inputs against the distractors, x_bas keeps T1 above T2, L1 keeps it sparse;
+    is that not what happens?). Instrumented re-runs (the rule and the bound wrapped only to read: the rule's
+    increment per synapse before the bound, the weights every 50 trials, g - 1 and x_bas at the cue and touch),
+    seeds 0-9, `l1`, recruited neurons = final w_ap above 0.5 (about 25 percent), means per recruited neuron, eta
+    0.0003 unless noted. (1) Naive: holds; g - 1 at the cue and touch 0.03-0.12 before trial 600, 1.3 percent of the
+    rule's total increment there (the early apical activity is at the outcome, x_pre 0.37 from trial 100, which has
+    no basal input). (2) 98 percent of the increment is made at the cue (43) and touch (55) steps, but every synapse
+    active at a step gets the same increment lr (g - 1) x_bas: 51 percent goes to coincident distractors (15
+    distractor events per trial over 17 steps, 0.9 per step), tone 21, preferred texture 22, other 6. (3) Distractor
+    sum 1.40 to 1.15, but the tone doubles (0.14 to 0.29; every trial, and the cue gain catches up with the touch
+    gain, g - 1 7.0 and 8.0 at the end, both from the one w_ap) while the preferred texture gains 16 percent (0.28
+    to 0.33). (4) The rule adds 0.446 to the preferred and 0.120 to the other texture, the L1 rescaling
+    (proportional to the weight) removes 0.400 and 0.067: net +0.046 and +0.053, the gap stays at 0.25, tone plus
+    other texture 0.17 to 0.37, preference 0.80 to 0.55 (0.36 at 0.001, where the preferred texture ends below its
+    start). Floor: at the other texture's touch x_bas 0.076, its own weight 0.027, background 0.01, coincident
+    distractors 0.039, so per unit weight it gets 2.4 times the preferred texture's increment. (5) The rescaling
+    multiplies all of a neuron's synapses by one factor, whatever the norm, so it never changes their ratios; inputs
+    above 0.05 stay at 7.7 (sparsening needs subtractive normalization or an update superlinear in w, Miller and
+    MacKay 1994). Learning: none of 10 seeds faster at 0.0001, 0.0003, 0.001 (1, 1, 6 never expert: no-go licks
+    never stop, or learn and relapse); a fresh control started from the weights at trial 1800 (thresholds
+    recomputed; from the initial weights it reproduces the control exactly) never becomes expert, 0 of 10 at 0.0003
+    and 0.001 (licks on every trial), against 1100. Ablations (`rule_frozen_inputs`, 0.0003): tone frozen 1 of 10
+    faster; distractors frozen 8 of 10, one seed lost (tone x2.8); textures only 10 of 10 by 22 trials (preference
+    still 0.54, gap 0.26 to 0.43), fresh control from its weights 446; x w under `l1` 10 of 10 by 26 (preference
+    kept), fresh 442. Times the weight and the basal drive (`apdev_mult` `'wbas'`, added 2026-10-21; bit-identical
+    to the scratch runs, `check_reproduces` 16/16 identical): the increment per unit weight is lr (g - 1) x_bas, so
+    the preferred texture grows 4.4 times faster per unit weight than the other and coincident distractors get 4-7
+    percent of the increment; `l1` 0.001 / 0.003 / 0.01 10 of 10 faster by 65 / 104 / 115 trials, preference 0.80 to
+    0.87-0.89, inputs above 0.05 7.7 to 5.9 / 4.7 / 3.1, fresh control from the 0.01 weights 202; 0.03 loses 1 seed,
+    0.1 5. Seeds 0-39 paired: `l1` 0.003 994 (39 of 40 faster, 127 trials, p 4e-12), 0.01 1004 (39, 118); `pre`
+    0.001 1021 (40, 101), 0.003 964 (40 of 40, 157 trials, 14 percent, p 2e-12; faster than x w `pre` 0.003 in 37 of
+    40 seeds, none slower, by 47 trials, p 1e-7; recruited 18 percent, preference 0.82 to 0.94 on seeds 0-9), 0.01
+    loses 4 of 10. Per-seed results (decomposition, ablation, fresh-network and 40-seed runs) in
+    `sandbox/results/apdev4/deep.jsonl`; page section on https://claude.ai/artifact/KcNfjUBvFmBdUUXMH2htJt (v5).
+  - (x - x_bar) and x_bas^2 (user, 2026-10-21: subtract each input's average so that frequent inputs are potentiated
+    less; square x_bas to keep the T1-T2 gap). `apdev_xbar` and `apdev_bas_power` in `sandbox/rules.py`: dw = lr (x -
+    x_bar) (g - 1) x_bas^p, x_bar a running average over 50 trials (`apdev_xbar_tau`; from 0, used before its update):
+    'step' over all time steps (frequency per step: tone 1/18, texture 1/36, distractor p/18), 'slot' per step of the
+    trial over trials (the input expected at that moment: tone 1 at the cue, texture 0.5 at the touch, distractor
+    p/17), 'apical' per synapse over the neuron's apical events (weighted by apical_norm, outcome step left out;
+    recruited neurons settle at 0.41 tone, 0.25 texture, 0.03 distractor). Seeds 0-9, `l1`, control 1100. x_bas^2
+    alone: at most 27 trials faster (0.003, 8 of 10); per unit weight at its own touch the two textures get 0.66 and
+    0.64 (x_bas: 1.17 and 2.75) because the weaker texture's increment is dominated by the floor's variance (rare
+    coincidences with a strong distractor, 0.34 of its 0.64); later the preference sharpens (0.80 to 0.94) but the
+    tone grows fastest (0.14 to 0.34; cue-selective neurons 52 to 99); `pre` fails from 0.003. With x - x_bar the
+    expected update is lr Cov(x, h), h = (g - 1) x_bas^p, so the distractors' chance coincidences cancel. 'step': the
+    tone and the textures are rare per step and keep 92 and 98 percent of their credit; x_bas^2 0.01 976 (10 of 10;
+    tone 0.33), x_bas still erodes the preference (0.80 to 0.68 at 0.0003, at most +23). 'slot': the tone is never
+    potentiated and the textures push against each other at the touch, E[dw_P] = lr/4 (g - 1)(h_P - h_O) = lr/4 (g -
+    1)(w_P - w_O) for x_bas (the floor cancels; with the square its variance too), preference 1.00: 913 (x_bas, 0.01),
+    877 (x_bas^2, 0.03; 0.1 loses 5); `pre` 941 (x_bas, 0.003). 'apical': tone-driven recruited neurons become tone
+    detectors (0.39 to 0.89), 96 percent of the texture-driven ones lose the tone, both textures are also depressed at
+    the cue: 1001 / 994 (x_bas / x_bas^2, 0.003). The tone accounts for most of the difference: with the tone not
+    potentiated (`rule_frozen_inputs` [0]) 'step' x_bas^2 0.01 learns in 883, 'apical' 951 / 967. x w as well ('wbas'
+    + 'slot', dw = lr (x - x_bar) w (g - 1) x_bas, multiplicative, the other texture decays exponentially): 987 / 918
+    / 851 / 776 at 0.003 / 0.01 / 0.03 / 0.1 (each 10 of 10; at 0.1 preferred texture 0.84, 2.1 inputs above 0.05, no
+    tone); 0.3 reaches expert in 693 but the preferred texture then decays (0.46 at trial 600 to 0.15 at 1800) while
+    the distractors grow, last-100-trial performance 0.98 (cause not analysed); `pre` 912 / 839 at 0.01 / 0.03 with
+    the cue neurons kept. Tau 10 / 50 / 200: 901 / 913 / 937 ('slot' x_bas 0.01); no normalization (clamp) fails at
+    every rate (distractor sum 5.8). Seeds 0-39 paired (control 1122): 'wbas' + 'slot' `l1` 0.1 786 (40 of 40, 336
+    trials, 30 percent; faster than x w x x_bas `pre` 0.003 in 40 of 40 by 179), 0.03 871 (40, 251); 'slot' x_bas^2
+    `l1` 0.03 902 (40, 220; faster than x w x x_bas in 39 of 40), x_bas `l1` 0.01 928 (40, 194), x_bas `pre` 0.003 950
+    (40, 172), 'step' x_bas^2 `l1` 0.01 989 (39, 133; tie with x w x x_bas, 20 / 19), 'apical' x_bas^2 `l1` 0.003 1001
+    (40, 120; slower than x w x x_bas in all 40). Fresh control from the end weights: 206 / 209 ('wbas' + 'slot' 0.1 /
+    0.03), 230 ('slot' x_bas), 342 ('slot' x_bas^2), 231 ('step'), 250 ('apical'), 337 (x_bas^2 alone), 385 ('wbas' +
+    'slot' `pre` 0.01), 6 of 10 expert from 'slot' x_bas `pre` 0.003 (recruited distractor sum 1.35 to 3.76). The
+    touch-signal onset is unchanged (first 50-trial block with mean touch gain above 1.2: 715 control, 685-700 with
+    the rules); onset to expert 385 control, 296 x w x x_bas, 177 'slot' x_bas^2, 166 'wbas' + 'slot' (0.03). Costs:
+    'slot' under `l1` removes the tone from every recruited neuron (cue-selective by weights 52 to 27, none recruited;
+    Fig. 4's cue population would change); under `pre` the tone stays but distractor weight piles up on the recruited
+    neurons (x_bas 0.01 loses 3, 0.03 all). The trial-locked x_bar needs the input expected at each moment of the
+    trial; the local 'apical' one is slower than x w x x_bas. Per-seed results `sandbox/results/apdev4/xbar.jsonl`;
+    page section (v6) on the same page.
+  - Time average without the square (user, 2026-10-21: the trial-locked x_bar is not biological; does the overall
+    average need x_bas^2?). 'step' x_bar (all steps of the trial, the outcome step included). Seeds 0-9, `l1`, control
+    1100: x_bas linear erodes the preference (0.80 to 0.67-0.68; the other texture x2.7-5, the preferred x1.6-2): a
+    texture's x_bar is small (1/36), so the floor's per-unit-weight advantage for the weaker texture stays, and only
+    the distractors' chance credit goes (their sum 1.40 to 0.99 / 0.56). 1077 / 1067 / 983 (1 lost) / 5 lost at 0.0003
+    / 0.0005 / 0.001 / 0.003; the tone takes over from 0.001 (cue-selective 52 to 139); tone frozen 1024 at 0.001,
+    preference 0.48; `pre` 1081 / 975 (1 lost) / 8 lost at 0.0003 / 0.001 / 0.003 (preference 0.44). Expected drift of
+    ln(w_P / w_O) at the initial weights (class aggregates, unit lr (g - 1)): -0.44 / -0.12 / +0.04 / +0.11 / +0.15 /
+    +0.17 / +0.17 at p = 1 / 1.25 / 1.5 / 1.75 / 2 / 2.5 / 3; without x_bar negative up to 3 (-0.83, -0.25, -0.09,
+    -0.02 at 1, 1.5, 2, 3). The x_bar term (x_bar times the neuron's summed drive) is the same for both textures and
+    takes a larger share of the weaker one's gain once p > 1. Runs: p = 1.5 998 / 990 (0.003 / 0.01; 0.03 loses 4), p
+    = 3 975 / 974 (0.01 / 0.03; 0.1 loses 8), preference 0.95-0.99, tone 0.14 to 0.33-0.40. x w x_bas instead of the
+    power ('wbas' + 'step', dw = lr (x - x_bar) w (g - 1) x_bas): drift +0.15; `l1` 993 / 974 / 915 (1 lost) / 884 (4
+    lost) at 0.003 / 0.01 / 0.03 / 0.1; `pre` 1022 / 958 / 885 / 835 / 757 / 621 / 505 / 435 / 360 / 338 at 0.001 /
+    0.003 / 0.01 / 0.03 / 0.1 / 0.3 / 1 / 3 / 10 / 30, every seed expert. Without x_bar `pre` gives 958 at 0.003,
+    loses 4 at 0.01 (recruited neurons' distractor sum 1.26 to 6.65) and all 10 at 0.03: under `pre` each input's
+    total is conserved and its weight moves to the neurons with the largest (g - 1) x_bas while it is active
+    (winner-take-all with the factor w), and the time average cancels the distractors' chance credit. It moves the
+    touch-signal onset (first 50-trial block with mean touch gain over all neurons above 1.2): 630 / 450 / 295 at 0.03
+    / 0.3 / 3 against 715 (every earlier rule 685-705); it acts on the small early gains (1.01-1.05). Largest 50-trial
+    mean change of the preferred texture on a recruited neuron (median): 1.3 / 1.7 percent per trial at 0.3 / 3
+    (x_bas^2 `l1` 0.01: 2). Exactly silent at gain 1: in the inhibition protocol (seeds 0-9) no weight changes in the
+    1800 inhibited trials; after the lift 641 / 448 at 0.3 / 3 (without inhibition 621 / 435; control 1155). Costs:
+    distractor build-up on the recruited neurons at 0.01-0.1 (1.25 to 2.5-3.8), 1-2 inputs above 0.05 per recruited
+    neuron from 0.3 (7 at the start), cue-selective neurons 52 to 38 / 32 / 28 / 35 / 47 / 51 at 0.01 / 0.03 / 0.1 /
+    0.3 / 1 / 3, the tone grows on the recruited neurons (0.20 to 0.37 at 0.3). Fresh control from the end weights:
+    204 (x w `l1` 0.01), 215 / 231 / 261 / 378 (p = 1.5 / 2 / 3 / 1), x w `pre` 462 / 682 / 395 / 305 / 302 / 273
+    (0.01 / 0.03 / 0.1 / 0.3 / 1 / 3). Seeds 0-39 paired (control 1122): p = 1 0.0005 1075 (39 of 40 faster, 47
+    trials); p = 1.5 0.003 1004 (39, 118; 0.01 loses 2 of 40); p = 2 0.01 989 (39, 133); p = 3 0.01 982 (39, 140); x w
+    `l1` 0.01 986 (39, 136); x w `pre` 0.01 / 0.03 / 0.1 / 0.3 / 1 / 3: 911 / 864 / 776 / 640 / 507 / 432 (each 40 of
+    40, 211 to 690 trials, 19 to 62 percent; each faster than p = 2 in 40 of 40). Per-seed results appended to
+    `sandbox/results/apdev4/xbar.jsonl` (1800 rows, inhibition rows with `prot` 'inh'); page section (v7) on the same
+    page.
+  - Final apical rule (user, 2026-10-21: the squared version with the time average and without `pre`): dw = lr (x -
+    x_bar) (g - 1) x_bas^2, x_bar the running average over all steps ('step', tau 50 trials), per-neuron `l1`. Scan on
+    seeds 0-9 (control 1100): `l1` tau 50 1070 / 1034 / 1006 / 995 / 985 / 980 / 976 / 978 / 992 / 1060 at 0.0003 /
+    0.001 / 0.002 / 0.003 / 0.005 / 0.007 / 0.01 / 0.014 / 0.02 / 0.03 (each 10 of 10 faster up to 0.02); tau 10 and
+    200 the same (975-993), tau 1000 slower (1013-1073: x_bar starts too slowly from 0); soft bound 965 at 0.01 (1
+    lost), all lost from 0.03; clip only 975 at 0.001 (1 lost), all lost from 0.003. Seeds 0-39, `sandbox.scan_gated`
+    (both protocols, `sandbox/results/apdev4/final_bio.jsonl`): lr 0.005 988 +- 189 (control 1122; 39 of 40 faster,
+    134 trials, 12 percent) and after the lift 1009 +- 178 (control 1163; 40 of 40, 154, 13 percent); 0.01 989 / 1027,
+    0.014 997 / 1055; 0.005 against 0.01 paired p 0.48 / 0.05 (18 trials for 0.005 after the lift), so 0.005 is the
+    final rate (also further from the failing rates). No weight change during the 1800 inhibited trials in any seed;
+    with the gain hidden from the rule (`rule_sees_gain` 'never') the run is identical to the control (seeds 0-9). End
+    state (0.005, seeds 0-39): texture detectors 17.2 percent (control 4.4; per network 170 against 40, hebb4 87, bcm4
+    93, calcium4 104), tone detectors 9.5 (2.3), inputs above 0.05 per neuron 7.3 (7.3), strongest input 0.76 (0.66);
+    S12d last 100 trials unresponsive 50.6 (53.4), selective 19.1 (22.3), non-selective 30.3 (24.2): fewer selective
+    neurons by the response criterion although the recruited ones end fully selective (not analysed). Recruited
+    neurons (seeds 0-9, decomposition): tone 0.14 to 0.34, preferred texture 0.27 to 0.61, other 0.026 to 0.012,
+    distractors 1.42 to 0.89, preference 0.79 to 0.98; cue-selective by weights 52 to 97. The rule acts at the cue and
+    the touch (summed increments 2406 / 3195, outcome step -4, other steps 16); touch-signal onset unchanged (705
+    against 715); 0.5 percent of its own change at gain < 1.1 (8.4 percent of the actual change, which includes the L1
+    settling after a weight reaches the clip; hebb4 / bcm4 / calcium4 95 / 88 / 84); largest 50-trial mean change of
+    the preferred texture on a recruited neuron 1.1 percent per trial (median). Tone not potentiated (0.01): 883
+    against 976. Fresh control from the end weights 236 (all 10). Figure set `sandbox/results/figures/apical4` (seeds
+    0-9: 985 / 1042 after the lift; f4f fails, the sandbox does not record `x_som_cue`), S14 panels with the rule as a
+    fifth condition (scratch script), `compare_control4_hebb4_bcm4_calcium4_apical4` and `fs12cd_wide_...apical4` in
+    `sandbox/results/figures/`; the S14 rank-sum test on seeds 0-9 calls the rule n.s. against the control (p 0.23).
+    Fast regime (control3): every rate loses seeds by divergence of the TD value estimate (v_hat grows exponentially
+    from about trial 200; the rule doubles the recruited neurons' touch drive and control3's TD rate has no margin):
+    0.0001 1 of 10, 0.0003 5, 0.001-0.01 8, 0.03 9, 0.1-0.3 10, the expert seeds as fast as the control (230); with TD
+    rate 0.0025 seed 6 still diverges, with 0.0015 no seed diverges but the rule is only about 3 percent faster
+    (393-396 against 406). Scan, fast and transplant rows in `sandbox/results/apdev4/final_scan.jsonl`; page
+    https://claude.ai/artifact/4ACjibSDakeKpWts2xh7Py. Ported to the main code on 2026-10-22 (user: an additional rule
+    for now) as `BU_APICAL`, whose two runs are bit-identical to the figure set `apical4` (see CLAUDE.md).
+  - Fast regime (user, 2026-10-22: optimize the final apical rule for the fast regime; page
+    https://claude.ai/artifact/EQMVLQ6ASuPuv9DyTUsYX2; runner `diag.py`, tables `tab.py` and `onset.py`, configs, logs
+    and per-seed data in `sandbox/results/scratch_2026-10-16_22/fast/`, seeds 0-9, 1800 trials): at control3's rates
+    every bound (`l1`, `pre`, `both`, `soft`, `clamp`) loses seeds to divergence of the TD value estimate at every rate
+    from 1e-4 (`l1` 1e-4 / 3e-4 / 1e-3 / 3e-3: 1 / 5 / 8 / 8 of 10; `pre` from 3e-4 9-10 of 10; `both` 1-7; `soft` all;
+    `clamp` 1e-4 5), the stable rates (`l1` 1e-5, 3e-5; `clamp` 1e-5) leave the expert trials at the control's 230,
+    x_bar's tau 10 or 200 changes nothing and power 1 (all lost from 3e-4) or 3 does not help. Mechanism (exact
+    per-trial linear map of the value weights and the proxy S): after a no-lick trial the end-of-trial reset multiplies
+    the value weights along the trial's activity by about 1 - lr_td K_V S, S = sum_t |x_t|^2 + sum_t x_t . z_t; control3
+    peaks at lr_td K_V S = 1.90 (20-trial mean over no-lick trials; brief excursions to 2.5 pass) against the overshoot
+    limit 2 (TD 0.004 makes 2.17: the known divergence), and the rule raises S 2.6-fold (4600 to 11900 over the last 100
+    no-lick trials) by moving each recruited neuron's input onto the high-gain cue and touch steps. With a slower TD
+    rate (control / rule at 0.01 and 0.03): 0.003 242 / 6 lost each; 0.0025 278 / 282 and 283 with seed 6 lost; 0.002
+    339 / 318 and 322; 0.0015 406 / 393 and 395; 0.1 and 0.3 lose seeds at every TD rate. The touch-signal onset comes
+    60 (control3: 170 against 230) to 116 trials before the expert trial, against about 400 in the biological regime,
+    and the rule acts only after it. TD 0.002 on seeds 0-39: 0.01 faster in 35 of 40 (median 16 trials) but 354 against
+    343 on average (seeds 17 and 33 about 680 trials later), 0.03 loses 2; after the lift (seeds 0-9) 0.01 337 against
+    359.
+- Scratch copies (2026-10-22, before the session was cleared): the scripts, configs, logs and page sources of the
+  2026-10-16 to 22 session (the scratchpad cited above, e.g. `gated/gated_diag.py`, `decomp/decomp.py`) are in
+  `sandbox/results/scratch_2026-10-16_22/` (gitignored), with the per-seed data of the fast-regime scan (`fast/`, 29
+  MB). The other per-seed data (about 6 GB, mostly `deep/` and `xbar/`) stay in
+  `/tmp/claude-1000/-home-ubuntu-td-dendrites/0df0b640-1149-4320-a05e-f74b18eee28b/scratchpad/` until the next reboot.
+  The scripts run from the repo root (`PYTHONPATH` set to it); `fast/diag.py` takes its base settings from the untracked
+  `sandbox/scan_gated.py`.
+- Scratch copies (2026-10-23, before the session was cleared): the scripts and page sources of the 2026-10-22 to 23
+  session (the S14 panels of the apical rule, the f4h_w_ap groups and the S14 refocus) are in
+  `sandbox/results/scratch_2026-10-22_23/` (gitignored, 7 MB): `render*.py` (panels to PNG through a patched
+  `save_or_show`), `measure_*.py` (legend and axes extents in points), `s14_numbers.py` and `panel_numbers.py` (the
+  numbers on the pages), `wap_*.py` (the f4h_w_ap groups and the alternatives), the page sources
+  (`page/apical_rule_panels.html` with `img3/` and `img4/`, version 4 of the S14 page, with the rule named Plastic w^bas, version 3 as `page/apical_rule_panels_v3.html`; `wpage/f4h_apical_weights.html`) and
+  `s14new/panels_before_s14_refocus.py` (`panels.py` before the refocus). The scripts run from the repo root
+  (`PYTHONPATH` set to it); their output paths point to the old scratchpad.
+- Scratch copies (2026-10-24): the fast-regime work of 2026-10-23 and 24 (the replots in `panels/fast/`, S15 versions 1
+  and 2, the learning-rate sweeps) is in `sandbox/results/scratch_2026-10-23_fast/` (version 1) and
+  `sandbox/results/scratch_2026-10-24_s15/` (gitignored, 7 MB): `sim_lr.py` (the 54 runs of the learning-rate sweeps,
+  as `simulations.run()` does them) with its log, `numbers_f.py` (per rate and value: expert, diverged with the trial of
+  divergence, lock-ins with their final lick rate, recruitment; `numbers_f.json`), `numbers_d.py` (S15d), `proto_f.py`
+  (the 2 x 2, 1 x 4 and one-axes prototypes of S15f), `render.py`, the page source (`page/fast_regime.html`, version 3,
+  with `fast_regime_v1.html` and `fast_regime_v2.html`), `before/` (the three modules before version 2, with the
+  dropped S15 panels d to f of version 1) and `old_s15_files/` (version 1's S15 PDFs and SVGs). Version 3 (the same
+  day, in `v3/`): `before/` (the modules before it, with version 2's scatter `fs15c_speedup`), `old_v2_files/` (version
+  2's c to f as PDF and SVG), `edit_panels.py` and `edit_page.py` (the edits), `proto_x.py` with `proto/` (the variants
+  of the cross: size, outline), `measure.py` (axes and label extents of S15d and e in points), `compose.py` (the panels
+  assembled on the 16 cm page, `s15_v3_assembled.png`), `png/` (the five panels at 300 dpi) and the logs of the render
+  and of `python main.py plot`; `v3/s12b_line/` (the S12b line, page version 4): `panels.py` before it, the S12b PNGs
+  with the line and the before/after difference sheet. The page source is version 4, with `fast_regime_v3.html`. The
+  scripts run from the repo root (`PYTHONPATH` set to it); their output paths point to the session's scratchpad.

@@ -77,7 +77,8 @@ class Agent:
         self.input_history = torch.zeros(self.policy_weights.size())
 
 
-def get_params(simulation: Simulation, fast: bool = False, inhibition: bool = False, theta_0: float = None
+def get_params(simulation: Simulation, fast: bool = False, inhibition: bool = False, theta_0: float = None,
+               lr: tuple[str, float] = None
                ) -> tuple[int, int, list[float], torch.Tensor, torch.Tensor, torch.Tensor, dict, int]:
     """
     Initialize parameters depending on the simulation type.
@@ -85,6 +86,7 @@ def get_params(simulation: Simulation, fast: bool = False, inhibition: bool = Fa
     :param fast: Whether to use the hyperparameters of the fast-learning regime instead of the biological ones
     :param inhibition: Whether the apical dendrites are inhibited (only for the bottom-up plasticity simulations)
     :param theta_0: Value of the theta_0 parameter (None: the value of the learning regime)
+    :param lr: Name and value of a learning rate that replaces the one of the learning regime (None: all of the regime)
     :return: Tuple containing the total number of basal inputs, the number of distractor inputs, the probabilities of
     each distractor to be activated in a trial, the basal weights, an array of theta values for each pyramidal neuron,
     the apical synaptic weights, the hyperparameters of the simulation (see helper.get_hyperparameters) and the number
@@ -93,6 +95,10 @@ def get_params(simulation: Simulation, fast: bool = False, inhibition: bool = Fa
     hp = get_hyperparameters(simulation=simulation, fast=fast)
     if theta_0 is not None:
         hp['theta_0'] = theta_0
+    if lr is not None:
+        if lr[0] not in LEARNING_RATES:
+            raise ValueError(f'{lr[0]} is not a learning rate of {LEARNING_RATES}')
+        hp[lr[0]] = lr[1]
     n_task_stim = 3  # Number of task-relevant stimuli
     n_noise_stim = N_NOISE  # Number of distractor stimuli
     n_trials = get_n_trials(simulation=simulation, inhibition=inhibition)
@@ -123,12 +129,12 @@ def get_params(simulation: Simulation, fast: bool = False, inhibition: bool = Fa
     return n_stim, n_noise_stim, noise_probs, w_bas, thetas.float(), weights_apical, hp, n_trials
 
 
-def basal_rule(simulation: Simulation, x_in: torch.Tensor, x_som: torch.Tensor, x_ap: torch.Tensor, hp: dict,
-               rule_state: dict) -> torch.Tensor:
+def basal_rule(simulation: Simulation, x_in: torch.Tensor, x_bas: torch.Tensor, x_som: torch.Tensor,
+               x_ap: torch.Tensor, hp: dict, rule_state: dict) -> torch.Tensor:
     """
-    Weight update of the basal synapses by the bottom-up plasticity rule of a simulation, before bounding. The rules
-    have no explicit apical factor: the apical signal enters through the gain in the somatic activity x_som, so the
-    rules also act at gain 1 (during apical inhibition).
+    Weight update of the basal synapses by the bottom-up plasticity rule of a simulation, before bounding. The first
+    three rules have no explicit apical factor: the apical signal enters through the gain in the somatic activity
+    x_som, so they also act at gain 1 (during apical inhibition). BU_APICAL is gated by the gain and silent at gain 1.
     - BU_HEBB: x_in (x_som - theta_bas), with the basal threshold theta_bas = theta_bas_0 times the expected basal drive
       per time step (plus background)
     - BU_BCM (Bienenstock, Cooper & Munro, 1982): x_in x_som (x_som - theta_m), with a sliding threshold theta_m that
@@ -136,14 +142,24 @@ def basal_rule(simulation: Simulation, x_in: torch.Tensor, x_som: torch.Tensor, 
     - BU_CALCIUM (Shouval, Bear & Cooper, 2002; Graupner & Brunel, 2012): with the calcium level
       c = x_som (1 + ca_beta a), a being the apical activation rescaled to [0, 1], potentiation above the threshold
       theta_p and depression above ca_ltd_frac theta_p (smooth thresholds, depression rate ca_gamma_d). With
-      ca_gamma_d >= 1 the net update of an active synapse is never positive (least depression above theta_p), so
-      synapses only grow relative to others through the renormalization of the 'pre' or 'l1' bound
+      ca_gamma_d >= 1 the net update of an active synapse is never positive (less depression above theta_p than in
+      the depression window), so synapses only grow relative to others through the renormalization of the 'pre'
+      or 'l1' bound
+    - BU_APICAL: (x_in - x_bar) (gain - 1) x_bas^2, with x_bar the running average of each input over all time steps
+      (outcome step included, time constant xbar_tau trials, starting at 0 and taken before its update). Silent at
+      gain 1; above it, the synapses of the inputs active at that step are potentiated and those of the absent inputs
+      depressed by their average, in proportion to the square of the neuron's basal drive. The drive at a texture
+      includes that texture's weight, so the preferred texture gains more relative to its weight than the other one,
+      and the 'l1' bound, which takes from all of a neuron's synapses in proportion to their weight, sharpens the
+      preference
     :param simulation: Simulation identifier
     :param x_in: Binary vector of the currently active basal inputs (all zero at the outcome time step)
+    :param x_bas: Basal activations (before the apical gain)
     :param x_som: Somatic activities
     :param x_ap: Apical activations
     :param hp: Hyperparameters of the simulation
-    :param rule_state: Per-neuron thresholds of the rule (theta_bas, theta_m and e0, or theta_p), updated in place
+    :param rule_state: Per-neuron thresholds of the rule (theta_bas, theta_m and e0, or theta_p) or the running average
+    x_bar of each input, updated in place
     :return: Weight update (number of basal inputs x number of neurons)
     """
     if simulation == Simulation.BU_HEBB:
@@ -159,6 +175,10 @@ def basal_rule(simulation: Simulation, x_in: torch.Tensor, x_som: torch.Tensor, 
         smooth = CA_SMOOTH * theta_p
         post = (torch.sigmoid((calcium - theta_p) / smooth)
                 - hp['ca_gamma_d'] * torch.sigmoid((calcium - hp['ca_ltd_frac'] * theta_p) / smooth))
+    elif simulation == Simulation.BU_APICAL:
+        pre = x_in - rule_state['x_bar']
+        rule_state['x_bar'] += (x_in - rule_state['x_bar']) / (hp['xbar_tau'] * N_TIME_STEPS)
+        return torch.outer(hp['lr_bas'] * pre, gain(x_ap) - 1) * x_bas ** 2
     else:
         raise ValueError(simulation)
     return torch.outer(hp['lr_bas'] * x_in, post)
@@ -187,7 +207,7 @@ def bound_basal_weights(w_bas: torch.Tensor, dw: torch.Tensor, bound: str, row_s
 
 
 def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fast: bool = False,
-                  inhibition: bool = False, theta_0: float = None) -> dict:
+                  inhibition: bool = False, theta_0: float = None, lr: tuple[str, float] = None) -> dict:
     """
     Simulate learning of a go-nogo sensory discrimination task
     :param simulation: Simulation identifier
@@ -196,6 +216,7 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
     :param inhibition: Whether to inhibit the apical dendrites for the first N_TRIALS trials (only for the bottom-up
     plasticity simulations)
     :param theta_0: theta_0 parameter (None: the value of the learning regime)
+    :param lr: Name and value of a learning rate that replaces the one of the learning regime (None: all of the regime)
     :return: Dictionary containing the evolution of all the recorded variables of interest during the simulation
     """
 
@@ -208,7 +229,7 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
     inhibited = is_inhibited(simulation=simulation, inhibition=inhibition)
     apical_active = not inhibited
     n_inputs, noise_inputs, noise_ps, w_bas, thetas, w_ap, hp, n_trials = get_params(
-        simulation=simulation, fast=fast, inhibition=inhibition, theta_0=theta_0
+        simulation=simulation, fast=fast, inhibition=inhibition, theta_0=theta_0, lr=lr
     )
     n_z = N_Z
     tlr, learning_rate, lr_ap, plr = hp['lr_trace'], hp['lr_td'], hp['lr_ap'], hp['lr_policy']  # Learning rates
@@ -222,7 +243,7 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
     if simulation == Simulation.BU_HEBB:
         rule_state['theta_bas'] = (hp['theta_bas_0'] * torch.matmul(stim_probs, w_bas) + BKG).float()
     elif simulation == Simulation.BU_BCM:
-        # The sliding threshold starts at theta, and e0 is set so that this is its fixed point at initialization
+        # The sliding threshold starts at theta; at the initial weights and gain 1 it relaxes to theta / bcm_e0_scale
         x_som_sq = (torch.matmul(stim_probs, (w_bas + BKG) ** 2)
                     + torch.clamp(1 - stim_probs.sum(), min=0) * BKG ** 2)  # Expected x_som^2 per time step at gain 1
         rule_state['theta_m'] = thetas.clone()
@@ -230,6 +251,8 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
     elif simulation == Simulation.BU_CALCIUM:
         # Potentiation threshold relative to the strongest response the neuron can produce at gain 1
         rule_state['theta_p'] = hp['ca_theta_p'] * (w_bas.max(0).values + BKG)
+    elif simulation == Simulation.BU_APICAL:
+        rule_state['x_bar'] = torch.zeros(n_inputs)  # Running average of each input
     row_sums, col_sums = w_bas.sum(1, keepdim=True).clone(), w_bas.sum(0, keepdim=True).clone()
 
     # Relevant simulation time steps (first simulated time step starts with the tone cue)
@@ -263,6 +286,12 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
 
     # Simulating trial after trial
     for j in range(n_trials):
+
+        # Stop if the simulation diverged: a state value estimate that grows without bound (a TD learning rate too large
+        # for the activity) makes the weights non-finite and the lick probability undefined. The variables of the
+        # remaining trials stay unrecorded (nan for the trial outcomes)
+        if not all(torch.isfinite(v).all() for v in (dw_weights, x_pre_t, w_ap, w_bas, actor.policy_weights)):
+            break
 
         # Lift apical inhibition (in case it was present)
         if j == N_TRIALS and inhibited:
@@ -303,7 +332,8 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
             dw_weights += learning_rate * dv_hat_now * z * K_V
             w_ap = torch.clamp(w_ap + lr_ap * x_pre_t[t] * (x_som - thetas) * (1 - w_ap) * w_ap, min=0, max=1)
             if bu_plasticity:
-                dw = basal_rule(simulation=simulation, x_in=x_in, x_som=x_som, x_ap=x_ap, hp=hp, rule_state=rule_state)
+                dw = basal_rule(simulation=simulation, x_in=x_in, x_bas=x_bas, x_som=x_som, x_ap=x_ap, hp=hp,
+                                rule_state=rule_state)
                 w_bas = bound_basal_weights(w_bas=w_bas, dw=dw, bound=hp['bound'], row_sums=row_sums, col_sums=col_sums)
             x_pre_t[t] += tlr * (abs(dv_hat_now.item()) - x_pre_t[t])
 
@@ -355,10 +385,11 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
         gains = gain(x_ap)  # Multiplicative apical gains
         x_som = gains * x_bas_background  # Somatic activations (also firing rate)
         if bu_plasticity:
-            # Without basal input the weights only change through the bound, but the thresholds of the rule see the
-            # outcome-time somatic activity
-            dw = basal_rule(simulation=simulation, x_in=torch.zeros(n_inputs), x_som=x_som, x_ap=x_ap.expand(n_z),
-                            hp=hp, rule_state=rule_state)
+            # Without basal input the weights of the first three rules only change through the bound, but their
+            # thresholds see the outcome-time somatic activity; BU_APICAL depresses each synapse by its input's average
+            # x_bar times (gain - 1), scaled by the squared background drive BKG^2
+            dw = basal_rule(simulation=simulation, x_in=torch.zeros(n_inputs), x_bas=x_bas_background, x_som=x_som,
+                            x_ap=x_ap.expand(n_z), hp=hp, rule_state=rule_state)
             w_bas = bound_basal_weights(w_bas=w_bas, dw=dw, bound=hp['bound'], row_sums=row_sums, col_sums=col_sums)
         dw_weights += learning_rate * (reward - r_pred) * z * (x_som - BKG)
         actor.update(reward=reward.item(), x_som=x_som)
@@ -409,11 +440,12 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
 def get_performance(correct_trials: np.ndarray) -> dict:
     """
     Extract the performance trace and the learning and expert trials of one seed with the method of Smith et al. (2004)
-    :param correct_trials: Array encoding for each trial whether the correct action was taken
+    :param correct_trials: Array encoding for each trial whether the correct action was taken (nan for the trials after
+    a divergence of the simulation, which count as errors)
     :return: Dictionary of the performance trace (one entry more than the number of trials) and the learning and expert
     trials (counted from 0, nan if not reached)
     """
-    t_learn, t_expert, performance, _ = smith_analysis(correct_trials)
+    t_learn, t_expert, performance, _ = smith_analysis(np.nan_to_num(correct_trials, nan=0.))
     return {K_PERFORMANCE: performance,
             K_LEARNING_T: int(t_learn) - 1 if np.isfinite(t_learn) else np.nan,
             K_EXPERT_T: int(t_expert) - 1 if np.isfinite(t_expert) else np.nan}
@@ -423,19 +455,19 @@ def simulate_and_analyse_seed(args: tuple) -> dict:
     """
     Simulate one seed with a single torch thread (seeds run in parallel processes) and add its performance trace and
     its learning and expert trials to the recorded variables
-    :param args: Tuple of the simulation identifier, the seed and the fast, inhibition and theta_0 options of
+    :param args: Tuple of the simulation identifier, the seed and the fast, inhibition, theta_0 and lr options of
     simulate_seed
     :return: Dictionary of the recorded variables of the seed
     """
-    simulation, seed, fast, inhibition, theta_0 = args
+    simulation, seed, fast, inhibition, theta_0, lr = args
     torch.set_num_threads(1)
-    result = simulate_seed(simulation=simulation, seed=seed, fast=fast, inhibition=inhibition, theta_0=theta_0)
+    result = simulate_seed(simulation=simulation, seed=seed, fast=fast, inhibition=inhibition, theta_0=theta_0, lr=lr)
     result.update(get_performance(result[K_CORRECT_TRIALS]))
     return result
 
 
 def simulate_seeds(simulation: Simulation, fast: bool = False, inhibition: bool = False, theta_0: float = None,
-                   n_workers: int = None):
+                   lr: tuple[str, float] = None, n_workers: int = None):
     """
     Simulate multiple runs of the sensory discrimination task in parallel processes and save their outcomes, including
     the performance traces
@@ -444,11 +476,15 @@ def simulate_seeds(simulation: Simulation, fast: bool = False, inhibition: bool 
     :param inhibition: Whether to inhibit the apical dendrites for the first N_TRIALS trials (only for the bottom-up
     plasticity simulations)
     :param theta_0: theta_0 parameter of the theta_0 sweep of the default simulation (None: the value of the regime)
+    :param lr: Name and value of the learning rate of a learning-rate sweep of the default simulation (None: all the
+    learning rates of the regime)
     :param n_workers: Number of parallel processes (None: one per CPU)
     """
-    # String specifying the value of the theta_0 parameter used for the output log
+    # String specifying the value of the swept parameter used for the output log
     if theta_0 is not None:
-        t0_str = f' with Theta_0 = {theta_0}'
+        t0_str = f" with Theta_0 = {theta_0}{' (fast-learning regime)' if fast else ''}"
+    elif lr is not None:
+        t0_str = f" with {lr[0]} = {lr[1]:g}{' (fast-learning regime)' if fast else ''}"
     else:
         t0_str = ''
 
@@ -456,9 +492,9 @@ def simulate_seeds(simulation: Simulation, fast: bool = False, inhibition: bool 
     results = []
     with Pool(n_workers) as pool:
         for result in pool.imap(simulate_and_analyse_seed,
-                                [(simulation, s, fast, inhibition, theta_0) for s in range(N_SEEDS)]):
-            if theta_0 is not None:
-                # The theta_0 sweep only keeps the trial outcomes, the basal weights, the final apical weights and the
+                                [(simulation, s, fast, inhibition, theta_0, lr) for s in range(N_SEEDS)]):
+            if theta_0 is not None or lr is not None:
+                # The sweeps only keep the trial outcomes, the basal weights, the final apical weights and the
                 # performance
                 result = {k: result[k] for k in (K_OUTCOME, K_CORRECT_TRIALS, K_W_BAS, K_PERFORMANCE, K_LEARNING_T,
                                                  K_EXPERT_T)} | {K_W_AP: result[K_W_AP][-1:, :]}
@@ -467,7 +503,8 @@ def simulate_seeds(simulation: Simulation, fast: bool = False, inhibition: bool 
     print(f"\rSimulation{t0_str} finished successfully.")
 
     # Save all the recorded variables of interest
-    with open(get_path(simulation=simulation, fast=fast, inhibition=inhibition, theta_0=theta_0), 'wb') as handle:
+    with open(get_path(simulation=simulation, fast=fast, inhibition=inhibition, theta_0=theta_0, lr=lr),
+              'wb') as handle:
         dump(results, handle, protocol=HIGHEST_PROTOCOL)
 
 
@@ -478,7 +515,10 @@ def extract_performances(n_workers: int = None) -> None:
     """
     paths = [get_path(simulation=simulation, fast=fast, inhibition=inhibition)
              for simulation, fast, inhibition in get_runs()]
-    paths += [get_path(simulation=Simulation.DEFAULT, theta_0=t0) for t0 in get_thetas_0()]
+    paths += [get_path(simulation=Simulation.DEFAULT, fast=fast, theta_0=t0)
+              for fast in (False, True) for t0 in get_thetas_0(fast=fast)]
+    paths += [get_path(simulation=Simulation.DEFAULT, fast=True, lr=(name, value))
+              for name in LEARNING_RATES for value in get_learning_rates(name)]
     with Pool(n_workers) as pool:
         for path in paths:
             with open(path, 'rb') as handle:
@@ -503,6 +543,12 @@ def run():
         print(f'\nSimulating {get_run_name(simulation, fast, inhibition)}:')
         simulate_seeds(simulation=simulation, fast=fast, inhibition=inhibition)
 
-    print('\nSimulating the theta_0 sweep:')
-    for t0 in get_thetas_0():
-        simulate_seeds(simulation=Simulation.DEFAULT, theta_0=t0)
+    for fast in (False, True):
+        print(f"\nSimulating the theta_0 sweep{' of the fast-learning regime' if fast else ''}:")
+        for t0 in get_thetas_0(fast=fast):
+            simulate_seeds(simulation=Simulation.DEFAULT, fast=fast, theta_0=t0)
+
+    for name in LEARNING_RATES:
+        print(f'\nSimulating the {name} sweep of the fast-learning regime:')
+        for value in get_learning_rates(name):
+            simulate_seeds(simulation=Simulation.DEFAULT, fast=True, lr=(name, value))

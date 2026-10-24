@@ -1,7 +1,8 @@
 """
 Assert that the ported main code (l5apical.simulations.simulate_seed) reproduces the sandbox mirror bit for bit at the
-settings of the figure sets it was ported from: control4 / hebb4 / bcm4 / calcium4 (biological regime) and control3 /
-hebb3 / bcm3 / calcium3 (fast-learning regime), each without and with apical inhibition, on short runs.
+settings of the figure sets it was ported from: control4 / hebb4 / bcm4 / calcium4 / apical4 (biological regime) and
+control3 / hebb3 / bcm3 / calcium3 (fast-learning regime, where the apical rule has no setting), each without and with
+apical inhibition, on short runs.
 Run:  python -m sandbox.check_reproduces [n_trials]
 """
 import json
@@ -16,7 +17,8 @@ from sandbox.simulate import simulate_seed_bu, get_params_bu, DEFAULT_HP
 from sandbox.figures import FIG_DIR
 
 CASES = [(Simulation.DEFAULT, Simulation.APICAL_INHIBITION, 'control'), (Simulation.BU_HEBB, None, 'hebb'),
-         (Simulation.BU_BCM, None, 'bcm'), (Simulation.BU_CALCIUM, None, 'calcium')]
+         (Simulation.BU_BCM, None, 'bcm'), (Simulation.BU_CALCIUM, None, 'calcium'),
+         (Simulation.BU_APICAL, None, 'apical')]
 
 
 def initial_w_bas(hp: dict, seed: int) -> np.ndarray:
@@ -30,6 +32,8 @@ def main(n_trials=120, seed=1):
     ok = True
     for fast, suffix in ((False, '4'), (True, '3')):
         for sim, sim_inh, name in CASES:
+            if sim in BU_SIMULATIONS and sim not in get_bu_simulations(fast=fast):
+                continue
             hp = json.load(open(FIG_DIR / f'{name}{suffix}' / 'hp.json'))
             for inhibition in (False, True):
                 n_inh = n_trials // 2 if inhibition else 0
