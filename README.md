@@ -30,19 +30,17 @@ The performance traces are extracted with a Python port of the method of Smith e
 
 ### Execution
 
-Before rerunning the simulations, you can test whether the installation was successful. Just enter
-```
-python main.py plot
-```
-
-This will plot all the panels (to the folder `panels`, and those of the fast-learning regime to `panels/fast`) with the existing simulation results. This is possible as the `main` branch contains pre-simulated results in the `results` folder, which are ~8GB and stored with [Git LFS](https://git-lfs.com) (install it before cloning). If you want to avoid downloading these files and simulate them yourself, you can clone the `clean` branch instead of the `main` branch. To rerun all the simulations, enter
+The simulation results (~8GB) are not stored in this repository. To generate them in the `results` folder, enter
 ```
 python main.py simulate
 ```
 
-This will overwrite any simulation outcomes present in the `results` folder. Each simulation runs its seeds in parallel on all available cores, extracts their performance traces with a Python port of the method of Smith et al. (2004) and saves the results once all its seeds are done (all simulations take about 90 minutes on an 8-core machine). To extract the performance traces of the saved results again, enter
+This will overwrite any simulation outcomes present in the `results` folder. Each simulation runs its seeds in parallel on all available cores, extracts their performance traces with a Python port of the method of Smith et al. (2004) and saves the results once all its seeds are done (all simulations take about 90 minutes on an 8-core machine). If the simulations are interrupted, the results saved before stay complete; rerun `python main.py simulate` to regenerate the others. To extract the performance traces of the saved results again, enter
 ```
 python main.py perf
 ```
 
-If the simulations are interrupted, the results saved before stay complete; rerun `python main.py simulate` to regenerate the others.
+Once the results exist, plot all the panels (to the folder `panels`, and those of the fast-learning regime to `panels/fast`) with
+```
+python main.py plot
+```

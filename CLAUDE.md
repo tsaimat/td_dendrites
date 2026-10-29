@@ -77,9 +77,10 @@ of `DEFAULT`, and so does `lr=('lr_td', value)` for a learning rate).
   `apical` runs (new on 2026-10-22); the other runs get it at the next `python main.py simulate` (about 1.7 GB more).
   Sizes: 307 MB (`DEFAULT`), 518 MB (`APICAL_INHIBITION`), 284 / 625 MB (`BU_*` without / with inhibition; 356 / 786 MB
   for `apical`, which has `x_som_cue`), 8.3 GB for the 18 runs, 1.8 MB per sweep value.
-- `*.pickle` are git LFS objects (`.gitattributes`). git-lfs is not installed on this machine: the checkout held
-  134-byte pointers, and the regenerated results are local and uncommitted. Never `git add` them without git-lfs
-  (GitHub rejects files over 100 MB, and the history would carry them).
+- The results are not stored in git (user, 2026-10-24): `/results/` is in `.gitignore`, and the LFS pointers of the
+  pre-port `results_default.pickle` and `results_perturbed.pickle` were removed (history keeps them). `.gitattributes`
+  still routes `*.pickle` to LFS as a guard; never `git add` a result (GitHub rejects files over 100 MB, and the
+  history would carry them).
 - Everything Matlab was removed on 2026-10-14 (user): the `Smith/` folder with the original Smith et al. scripts,
   `getperfs.m` and the `.mat` files of the trial outcomes and performances. Git history keeps them up to 390281e.
 - The `clean` branch (the same code without results) is not on the fork: origin only has `main`.
@@ -692,9 +693,11 @@ chronological notes of everything tried, including the rules that were set aside
    trials, divergence, weight totals, selectivity), with a short `lr_bas` check per bound. Under `pre` the number of
    detectors of each stimulus equals its conserved total weight (about 56 neurons per texture), see the `fs14e`
    mechanism in Figure review.
-3. Results hosting: committing the 8.3 GB needs git-lfs here and LFS quota (the README says `main` carries about 8 GB in
-   LFS), or the results go elsewhere. The `clean` branch: ask where it lives, then update it. Slimming (user,
-   2026-10-16: only once the figures are final): never read are `gain` outside the biological `DEFAULT` (1.8 GB), `w_ap`
+3. Results hosting (user, 2026-10-24): the results stay out of git (8.3 GB against GitHub's free 10 GiB of LFS storage
+   and 10 GiB of monthly bandwidth); once the figures are final, archive them (Zenodo proposed) and link the archive in
+   the README, which for now says to run `python main.py simulate`. Upstream's `clean` branch (the fork has none): ask
+   where it lives, then update it. Slimming (user, 2026-10-16: only once the figures are final): never read are
+   `gain` outside the biological `DEFAULT` (1.8 GB), `w_ap`
    outside it beyond neurons 0 to 2 and the last trial (1.8 GB; the biological `APICAL_INHIBITION` needs neurons 1 and
    2), `x_som_texture` in the 8 inhibition runs (1.3 GB) and `w_bas_final` (a copy of `w_bas` or of the last snapshot,
    21 MB): 7.0 to 2.1 GB for the 16 runs before `BU_APICAL`, with `DEFAULT` (234 MB) and the rule files (139 to 145 MB)
@@ -706,9 +709,9 @@ chronological notes of everything tried, including the rules that were set aside
    panel reads the hebb, bcm and calcium runs. Since 2026-10-23 `panels/fast/` reads the fast `DEFAULT` and
    `APICAL_INHIBITION` as the biological panels read theirs; S15 (version 3, 2026-10-24) reads `performance` and
    `expert_t` of both regimes' `DEFAULT` and `APICAL_INHIBITION`, the fast `theta_0` sweep and the learning-rate sweeps
-   (no longer the biological sweep, which S12b reads, nor `outcome_dendrite` or `v_hat`). In git,
-   `results_default.pickle` and `results_perturbed.pickle` are still the LFS pointers of the pre-port results; the
-   pointers of the deleted `MIXED_SELECTIVITY` and `BU_PLASTICITY` runs were removed on 2026-10-16.
+   (no longer the biological sweep, which S12b reads, nor `outcome_dendrite` or `v_hat`). The LFS pointers of the
+   pre-port `results_default.pickle` and `results_perturbed.pickle` were removed from git on 2026-10-29, those of the
+   deleted `MIXED_SELECTIVITY` and `BU_PLASTICITY` runs on 2026-10-16.
 4. Decide what happens to the 26 GB of figure-set pickles (user, after the port), and delete the sandbox once the new
    figures exist (its prototypes read those pickles). The 9 sets `*3`, `*4` and `apical4` (18 GB) duplicate `results/`
    and `results/fast/`, the 4 sets `*2` (8 GB) exist only there; the duplicates can go once the new figures read
@@ -723,4 +726,5 @@ chronological notes of everything tried, including the rules that were set aside
 7. Commit only when the user says so. Committed and pushed on 2026-10-24 (user: "commit and push"): the S14 draft,
    the f4h_w_ap groups, the `BU_APICAL` port, the fast regime with S15 version 3, the S12b `theta_0` line and the
    learning-rate sweeps, the sandbox knobs of the gated and apical rules (with `sandbox/scan_gated.py` and
-   `sandbox/tab_gated.py`) and these notes; the results stay out of git (see Data files).
+   `sandbox/tab_gated.py`) and these notes. Committed and pushed on 2026-10-29 (user): the results out of git (see
+   Data files: `/results/` in `.gitignore`, the README's Execution section, the two pre-port LFS pointers removed).

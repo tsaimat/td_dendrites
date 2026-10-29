@@ -1,6 +1,9 @@
 # Figures
 panels/
 
+# Simulation results (~8GB, not stored in git, see README)
+/results/
+
 # Pycharm
 .idea/
 
