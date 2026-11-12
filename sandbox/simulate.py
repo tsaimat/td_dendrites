@@ -4,6 +4,7 @@ passed in as a dict and (3) periodic snapshots of the basal weights. Kept as a v
 trial loop except at the lines marked "SANDBOX", so that sandbox/check_reproduces.py can assert bit-identity
 with the main code. If the main loop changes, re-copy it here.
 """
+import os
 from random import seed as rd_seed
 from random import shuffle as random_shuffle
 import numpy as np
@@ -47,6 +48,27 @@ DEFAULT_HP = dict(
     theta_gate=None,          # per-neuron plasticity gate on the basal rule's update: None (off), 'pot' (potentiation
                               # only on neurons with x_som > basal threshold, depression untouched) or 'all' (no
                               # basal plasticity at all on neurons below the basal threshold)
+    policy_sees_gain=True,    # False: the policy network reads the un-gained basal drive x_bas at the stimulus time
+                              # steps, and its update the outcome-time somatic activity at gain 1 (BKG), so the apical
+                              # gain reaches behaviour only through the basal weights (without bottom-up plasticity the
+                              # policy then learns exactly as under apical inhibition); 'outcome': the readout is
+                              # un-gained but the update keeps the outcome-time gain; True = main code
+    lr_bas_pg=0.,             # learning rate of the basal weights by the policy gradient (user, 2026-11-03: plasticity
+                              # backpropagated from the policy loss): at the outcome of every trial dw_ki = lr_bas_pg r
+                              # (1 - p(chosen action)) X_k w_pol_i, X_k = 1 if input k occurred in the trial, the gradient
+                              # of the REINFORCE objective through the policy's readout of the un-gained basal drive (use
+                              # with policy_sees_gain False; the bound applies); 0 = main code
+    record_apical=None,       # directory in which to save the apical activation x_ap of every neuron at every time step
+                              # of every trial (outcome step last; 0 when inhibited) as seed<seed>.npy, float32 of
+                              # shape (n_trials, N_TIME_STEPS, n_z); None = main code
+    apical_replay=None,       # directory of such recordings (of a run with the same seed, so with the same stimuli in
+                              # every trial): the basal rule sees the recorded x_ap and its gain, and the un-gained
+                              # basal drive as the somatic rate, instead of the network's own apical activity (which
+                              # still drives the network's apical loop, reaching nothing else unless policy_sees_gain is
+                              # True); None = main code
+    apical_replay_shift=0,    # causal control only: replay the recording of seed (seed + shift) % 10 instead (another
+                              # network's apical activity, so it falls on unrelated neurons; stimuli differ too); 0 =
+                              # the run's own seed
     rule_frozen_inputs=(),    # causal ablation only: indices of the inputs (0 tone, 1 T2, 2 T1, then the distractors)
                               # whose synapses the basal rule leaves unchanged (their update is set to 0; a
                               # renormalizing bound still rescales them); () = main code
@@ -235,6 +257,11 @@ def simulate_seed_bu(hp: dict = None, seed: int = 0) -> dict:
     w_bas_h = np.zeros((len(snap_trials), n_inputs, n_z), dtype=np.float32)  # SANDBOX
     policy_h = np.zeros((len(snap_trials), n_z), dtype=np.float32)  # SANDBOX
     state_h = {}  # SANDBOX
+    policy_gain = hp.get('policy_sees_gain', True)  # SANDBOX
+    x_ap_rec = np.zeros((n_trials, n_timings, n_z), dtype=np.float32) if hp.get('record_apical') else None  # SANDBOX
+    replay_seed = (seed + int(hp.get('apical_replay_shift', 0))) % 10
+    replay = (np.load(f"{hp['apical_replay']}/seed{replay_seed}.npy", mmap_mode='r') if hp.get('apical_replay')
+              else None)  # SANDBOX
 
     # Simulating trial after trial
     diverged_at = None  # SANDBOX
@@ -288,13 +315,18 @@ def simulate_seed_bu(hp: dict = None, seed: int = 0) -> dict:
             x_ap = apical_transfer(w_ap * x_pre_t[t])  # SANDBOX: split in two lines to hand x_ap to the rule
             gains = gain(x_ap)
             x_som = gains * x_bas
-            actor.integrate_input(x_som)
+            actor.integrate_input(x_som if policy_gain is True else x_bas)  # SANDBOX: policy_sees_gain
             dv_hat_now = torch.dot(dw_weights, x_som)
+            if x_ap_rec is not None:  # SANDBOX
+                x_ap_rec[j, t] = x_ap.numpy()
 
             # Update state value estimator, sensory dendrite afferent and sensory dendrite synaptic weight
             dw_weights += learning_rate * dv_hat_now * z_h[j, :] * K_V
             w_ap = torch.clamp(w_ap + lr_ap * x_pre_t[t] * (x_som - thetas) * (1 - w_ap) * w_ap, min=0, max=1)
-            if hp.get('rule_sees_gain', True) not in (False, 'never'):  # SANDBOX
+            if replay is not None:  # SANDBOX: the rule sees the recorded apical activity, the soma its un-gained drive
+                x_ap_r = torch.from_numpy(np.array(replay[j, t]))
+                dw = rule(w_bas, x_in, x_bas, x_bas, x_ap_r, gain(x_ap_r), thetas_bas, hp, state)
+            elif hp.get('rule_sees_gain', True) not in (False, 'never'):  # SANDBOX
                 dw = rule(w_bas, x_in, x_som, x_bas, x_ap, gains, thetas_bas, hp, state)
             else:  # SANDBOX: ablation, the rule sees the un-gained rate and resting apical variables
                 dw = rule(w_bas, x_in, x_bas, x_bas, torch.full_like(x_ap, 1. / MAX_GAIN), torch.ones_like(gains), thetas_bas, hp, state)
@@ -352,9 +384,15 @@ def simulate_seed_bu(hp: dict = None, seed: int = 0) -> dict:
         # Update state-value estimate and policy network according to outcome activity
         gains = gain(x_ap)
         x_som = gains * x_bas_background
+        if x_ap_rec is not None:  # SANDBOX
+            x_ap_rec[j, outcome_t] = x_ap.expand(n_z).numpy()
         # SANDBOX: let the rule's slow variables see the outcome-time apical activity (no presynaptic input, so
         # every rule returns dw = 0 here)
-        if hp.get('rule_sees_gain', True) == 'never':  # SANDBOX: ablation, the rule sees rest at the outcome step too
+        if replay is not None:  # SANDBOX: the recorded outcome-time apical activity
+            x_ap_r = torch.from_numpy(np.array(replay[j, outcome_t]))
+            dw = rule(w_bas, torch.zeros(n_inputs), x_bas_background, x_bas_background, x_ap_r, gain(x_ap_r),
+                      thetas_bas, hp, state)
+        elif hp.get('rule_sees_gain', True) == 'never':  # SANDBOX: ablation, the rule sees rest at the outcome step too
             x_ap_rest = torch.full((n_z,), 1. / MAX_GAIN)
             dw = rule(w_bas, torch.zeros(n_inputs), x_bas_background, x_bas_background, x_ap_rest, torch.ones(n_z),
                       thetas_bas, hp, state)
@@ -363,7 +401,13 @@ def simulate_seed_bu(hp: dict = None, seed: int = 0) -> dict:
                       thetas_bas, hp, state)
         w_bas = apply_bound(w_bas, None if j < hp.get('rule_start_trial', 0) else dw, hp)  # SANDBOX: rule_start_trial
         dw_weights += learning_rate * (reward - r_pred) * z_h[j, :] * (x_som - BKG)
-        actor.update(reward=reward.item(), x_som=x_som)
+        if float(hp.get('lr_bas_pg', 0.)) > 0:  # SANDBOX: the policy gradient through the readout, before its update
+            present = (basal_input > 0.5).float()  # Every input that occurs does so once per trial
+            dw_pg = (float(hp['lr_bas_pg']) * reward.item() * (1 - float(actor.a_prob))
+                     * torch.outer(present, actor.policy_weights))
+        actor.update(reward=reward.item(), x_som=x_som if policy_gain in (True, 'outcome') else x_bas_background)
+        if float(hp.get('lr_bas_pg', 0.)) > 0:
+            w_bas = apply_bound(w_bas, dw_pg, hp)
 
         # Record variables of interest for post-simulation analysis
         v_hat_h[j, outcome_t+1] = v_hat_h[j, outcome_t] - r_pred
@@ -381,6 +425,9 @@ def simulate_seed_bu(hp: dict = None, seed: int = 0) -> dict:
         # Update weights according to TD error elicited by resetting value estimate to zero at the end of the trial
         dw_weights += - learning_rate * torch.tensor(v_hat_h[j, outcome_t+1] * z_h[j, :]).float() * K_V
 
+    if x_ap_rec is not None:  # SANDBOX
+        os.makedirs(hp['record_apical'], exist_ok=True)
+        np.save(f"{hp['record_apical']}/seed{seed}.npy", x_ap_rec)
     z_h[z_h == 0] = np.nan
     if not hp['store_full']:  # SANDBOX: slim results (a 4000-trial seed is ~50 MB otherwise)
         big = (z_h, gain_h, td_delta_h, d_sen_tx, d_sen_t1, d_sen_t2, x_som_texture_h)

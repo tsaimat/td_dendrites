@@ -30,6 +30,10 @@ COL_BCM = '#eb6834'
 COL_CALCIUM = '#4a3aa7'
 COL_APICAL = '#1baf7a'
 COL_FAST = '#2a78d6'  # Color of the fast-learning regime (against grey for the biological one)
+COL_GAIN_BLIND = COL_CALCIUM  # Color of the gain-blind simulation (only plasticity in fig. S15; against the grey and
+# the green of fig. S14c the farthest of the validated rule colors for color vision deficiencies, OKLab Delta E 18.8 or
+# more, and 8.6:1 contrast on white)
+COL_GATED_HEBB = COL_APICAL  # Color of the gated Hebbian rule with the gain (both in fig. S15), that of the apical rule
 COL_DIVERGED = '0.9'  # Shading of the parameter values at which the simulation diverges in every seed
 COL_PARTLY_DIVERGED = '0.955'  # Shading of those at which it diverges in some seeds but not all
 
@@ -55,6 +59,12 @@ SVG_DIR = 'svg'
 # Processing initializations
 N_BEFORE_EXPERT = 500  # Number of trials before the expert trial to plot
 N_EXPERTS = 150  # Number of expert trials to plot
+THETA0_COLORBAR_ROOM = 0.28  # Height (inches) by which fig. S15c's axes are lowered for the colorbars above them
+MIN_RASTER_TRIALS = 10  # Minimal number of trials of the plotted type (pooled over the seeds) per row of the rasters
+RASTER_BATCH = 20  # Number of trials per row of the rasters (fig. 4e, S11e)
+RASTER_INTERPOLATION = 'nearest'  # Rows and time steps drawn as blocks in every output (the default 'antialiased'
+# smooths a raster only when it is magnified less than three times, so the dendrite and soma rasters, with their
+# different row counts, used to look different, and the SVG copies differed from the PDFs)
 N_AV_BIN = 20  # Number of available bins for histograms
 BIN_MAX = 6  # Maximal bin ID for histogram
 RESPONSIVE_THRESHOLD = 0.1  # Mean somatic activity in the texture window above which a neuron is texture-responsive
@@ -67,13 +77,19 @@ RECRUITED_THRESHOLD = 0.5  # Final apical weight above which a neuron counts as 
 # Labels and colors of the control without bottom-up plasticity (Simulation.DEFAULT, Simulation.APICAL_INHIBITION in the
 # apical inhibition protocol) and of the bottom-up plasticity simulations
 BU_LABELS = {Simulation.DEFAULT: 'Control', Simulation.BU_HEBB: 'Hebb', Simulation.BU_BCM: 'BCM',
-             Simulation.BU_CALCIUM: 'Calcium', Simulation.BU_APICAL: 'Plastic $w^\\mathrm{bas}$'}
+             Simulation.BU_CALCIUM: 'Calcium', Simulation.BU_APICAL: 'Plastic $w^\\mathrm{bas}$',
+             Simulation.BU_GAIN_BLIND: 'Only plasticity', Simulation.BU_GATED_HEBB: 'Both'}
 BU_COLORS = {Simulation.DEFAULT: 'grey', Simulation.BU_HEBB: COL_HEBB, Simulation.BU_BCM: COL_BCM,
-             Simulation.BU_CALCIUM: COL_CALCIUM, Simulation.BU_APICAL: COL_APICAL}
+             Simulation.BU_CALCIUM: COL_CALCIUM, Simulation.BU_APICAL: COL_APICAL,
+             Simulation.BU_GAIN_BLIND: COL_GAIN_BLIND, Simulation.BU_GATED_HEBB: COL_GATED_HEBB}
 
 # Labels and colors of the learning regimes (keyed by the fast option)
 REGIME_LABELS = {False: 'Biological', True: 'Fast'}
 REGIME_COLORS = {False: 'grey', True: COL_FAST}
+# Labels and colors of the three optimized models of fig. S15a and b (user, 2026-11-03): the fast-learning regime (the
+# apical gain without bottom-up plasticity), the gain-blind simulation and the gated Hebbian rule with the gain
+S15_LABELS = ('Only gain', BU_LABELS[Simulation.BU_GAIN_BLIND], BU_LABELS[Simulation.BU_GATED_HEBB])
+S15_COLORS = (BU_COLORS[Simulation.DEFAULT], COL_GAIN_BLIND, COL_GATED_HEBB)  # As control and rule in fig. S14c
 # Names of the learning rates of the fast-learning regime in their sweeps (fig. S15e)
 LR_LABELS = {'lr_td': 'TD', 'lr_policy': 'Policy', 'lr_ap': 'Apical weights', 'lr_trace': 'Apical input'}
 
@@ -88,20 +104,29 @@ def get_plot_dir(fast: bool = False) -> Path:
 
 
 def get_results(simulation: Simulation = Simulation.DEFAULT, expert_aligned: bool = False, theta_0: float = None,
-                fast: bool = False, inhibition: bool = False, lr: tuple[str, float] = None) -> list[dict]:
+                fast: bool = False, inhibition: bool = False, lr: tuple[str, float] = None,
+                all_trials: bool = False) -> list[dict]:
     """
-    Align simulation outcomes to the trials at which the simulated agents crossed the expertise thresholds
+    Load simulation outcomes, optionally aligned to the trials at which the simulated agents crossed the expertise
+    thresholds. Without apical inhibition every simulation is cut to its first N_TRIALS trials (the default simulation
+    runs N_TRIALS_CONTROL, all of which only fig. 4h shows), over which its performance is estimated (see
+    simulations.get_performance).
     :param simulation: Enum identifier of the simulation type
     :param expert_aligned: Whether to align trials to the first expert trial
     :param theta_0: Value of the theta_0 parameter (only for the theta_0 sweep of the default simulation)
     :param fast: Whether to load the simulation with the hyperparameters of the fast-learning regime
     :param inhibition: Whether to load the simulation with apical inhibition (only for bottom-up plasticity simulations)
     :param lr: Name and value of the learning rate (only for the learning-rate sweeps of the default simulation)
+    :param all_trials: Whether to keep every simulated trial
     :return: results dictionary with values aligned to expert times
     """
     with open(get_path(simulation=simulation, fast=fast, inhibition=inhibition, theta_0=theta_0, lr=lr),
               'rb') as handle:
         results = load(handle)
+    if not all_trials and not is_inhibited(simulation=simulation, inhibition=inhibition):
+        for result in results:
+            for k in [k for k in KEYS_1D + KEYS_2D if k in result]:
+                result[k] = result[k][:N_TRIALS + 1 if k == K_PERFORMANCE else N_TRIALS]
     if expert_aligned:
         for s in range(N_SEEDS):
             expert_t = int(results[s][K_EXPERT_T])
@@ -113,7 +138,8 @@ def get_results(simulation: Simulation = Simulation.DEFAULT, expert_aligned: boo
     return results
 
 
-def get_bu_results(simulation: Simulation, inhibition: bool = False, fast: bool = False) -> list[dict]:
+def get_bu_results(simulation: Simulation, inhibition: bool = False, fast: bool = False,
+                   all_trials: bool = False) -> list[dict]:
     """
     Load the results of the control without bottom-up plasticity or of a bottom-up plasticity simulation, in the
     protocol with or without apical inhibition
@@ -121,11 +147,23 @@ def get_bu_results(simulation: Simulation, inhibition: bool = False, fast: bool 
     :param inhibition: Whether to load the protocol in which the apical dendrites are inhibited for the first N_TRIALS
     trials (Simulation.APICAL_INHIBITION for the control)
     :param fast: Whether to load the simulation with the hyperparameters of the fast-learning regime
+    :param all_trials: Whether to keep every simulated trial (see get_results)
     :return: results dictionaries of all seeds (not aligned)
     """
     if simulation == Simulation.DEFAULT:
-        return get_results(simulation=Simulation.APICAL_INHIBITION if inhibition else Simulation.DEFAULT, fast=fast)
-    return get_results(simulation=simulation, fast=fast, inhibition=inhibition)
+        return get_results(simulation=Simulation.APICAL_INHIBITION if inhibition else Simulation.DEFAULT, fast=fast,
+                           all_trials=all_trials)
+    return get_results(simulation=simulation, fast=fast, inhibition=inhibition, all_trials=all_trials)
+
+
+def get_shown_trials(inhibition: bool) -> int:
+    """
+    Number of trials the panels show of a protocol (the default simulation without inhibition runs longer, see
+    get_results)
+    :param inhibition: Whether the protocol inhibits the apical dendrites for the first N_TRIALS trials
+    :return: Number of trials
+    """
+    return N_TRIALS_AP_INH if inhibition else N_TRIALS
 
 
 def get_bu_conditions(fast: bool = False) -> tuple[Simulation, ...]:
@@ -468,6 +506,42 @@ def batch_nan_stat(values: type[np.ndarray | list[np.ndarray]], batch_size: int 
     return batch_stat
 
 
+def nan_sem(values: np.ndarray, axis: int = 0) -> np.ndarray:
+    """
+    Standard error of the mean along an axis, ignoring nan: the sample standard deviation (denominator n - 1) divided
+    by the square root of the number n of values that are not nan (nan where n is below 2)
+    :param values: Array of values (e.g. seeds x batches)
+    :param axis: Axis along which to compute the standard error (e.g. that of the seeds)
+    :return: Array of the standard errors
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        return np.nanstd(values, axis=axis, ddof=1) / np.sqrt(np.sum(~np.isnan(values), axis=axis))
+
+
+def batch_nan_mean_widened(values: np.ndarray, batch_size: int, min_trials: int) -> np.ndarray:
+    """
+    Mean over the seeds and trials of sequential batches of trials of one type (the other trials nan), each batch
+    widened symmetrically, one trial on each side at a time, until it holds at least min_trials trials of that type
+    pooled over the seeds (or covers every trial), so that no batch is empty where that trial type is rare
+    :param values: Array of seeds x trials (x time steps) of the values, nan in the trials of other types
+    :param batch_size: Number of trials per batch
+    :param min_trials: Minimal number of trials of the type pooled over the seeds per batch
+    :return: Array of batches (x time steps) of the means
+    """
+    n_trials = values.shape[1]
+    present = ~np.isnan(values.reshape(values.shape[0], n_trials, -1)).all(axis=2)
+    cum_count = np.concatenate(([0], np.cumsum(present.sum(axis=0))))
+    n_batches = n_trials // batch_size
+    means = np.zeros((n_batches,) + values.shape[2:])
+    for b in range(n_batches):
+        start, end = b * batch_size, (b + 1) * batch_size
+        while cum_count[end] - cum_count[start] < min_trials and (start > 0 or end < n_trials):
+            start, end = max(start - 1, 0), min(end + 1, n_trials)
+        means[b] = np.nanmean(values[:, start:end], axis=(0, 1))
+    return means
+
+
 def get_significance(p_value: float) -> str:
     """
     Get significance stars for a p-value.
@@ -656,12 +730,23 @@ def plot_selectivity_histogram(ax: plt.Axes, selectivities: np.ndarray) -> np.nd
     return np.array([counts[unselective_bins].sum(), counts[s1_bins].sum(), counts[s2_bins].sum()])
 
 
+def get_typical_seed(results: list[dict]) -> int:
+    """
+    Seed whose expert trial is closest to the mean expert trial of all seeds (the first of several equally close)
+    :param results: list of the results of each seed
+    :return: index of the seed
+    """
+    expert_ts = np.array([r[K_EXPERT_T] for r in results], dtype=float)
+    return int(np.nanargmin(np.abs(expert_ts - np.nanmean(expert_ts))))
+
+
 def plot_perf_eg(saving: bool = True, mean: bool = True, sim: Simulation = Simulation.DEFAULT,
                  save_name: str = 'perf_example', fast: bool = False):
     """
     Performance trace example for the default model
     :param saving: boolean encoding whether to save (or just display) the plot.
-    :param mean: boolean encoding whether to plot an example or the mean performance
+    :param mean: boolean encoding whether to plot an example (the seed with the expert trial closest to the mean, see
+    get_typical_seed) or the mean performance
     :param sim: simulation identifier
     :param save_name: name under which to save the plot
     :param fast: whether to plot the simulation of the fast-learning regime
@@ -682,7 +767,7 @@ def plot_perf_eg(saving: bool = True, mean: bool = True, sim: Simulation = Simul
         xp_t = sum([results[seed][K_EXPERT_T] for seed in range(N_SEEDS)]) / N_SEEDS
 
     else:
-        seed = 0
+        seed = get_typical_seed(results)
         ax.plot(trials, results[seed][K_PERFORMANCE], 'k')
         xp_t = results[seed][K_EXPERT_T]
     ax.plot([xp_t, xp_t], [0, 1], 'r--', lw=0.5, zorder=0)
@@ -757,11 +842,15 @@ def plot_v_hat(saving=True, outcome_types: tuple[Outcome, ...] = (Outcome.HIT, O
         v_preds_outcome = get_outcome_specific(outcome=outcome_type, outcomes=outcomes, values=v_preds)
         for j, window in enumerate(trial_windows):
 
-            # Process the value estimate in the desired window of trials
+            # Process the value estimate in the desired window of trials: mean of each seed over its trials of the type
+            # in the window (nan if it has none), then mean +- s.e.m. over the seeds
             v_preds_outcome_window = np.array([v_preds_outcome[s][window, :] for s in range(N_SEEDS)])
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                seed_means = np.nanmean(v_preds_outcome_window, axis=1)
             vp_mean, vp_ste = np.zeros(len(x)), np.zeros(len(x))
-            vp_mean[simulated_x_ts] = np.nanmean(v_preds_outcome_window, axis=(0, 1))
-            vp_ste[simulated_x_ts] = np.nanstd(v_preds_outcome_window, axis=(0, 1)) / np.sqrt(N_SEEDS)
+            vp_mean[simulated_x_ts] = np.nanmean(seed_means, axis=0)
+            vp_ste[simulated_x_ts] = nan_sem(seed_means, axis=0)
 
             # Plot the traces with standard error
             axs[r0 + j].fill_between(x, vp_mean - vp_ste, vp_mean + vp_ste, color=color, alpha=0.3, linewidth=0.)
@@ -782,8 +871,11 @@ def plot_v_hat(saving=True, outcome_types: tuple[Outcome, ...] = (Outcome.HIT, O
                 y = dv_dt
             else:
                 y = np.abs(dv_dt)
-            dvdt_mean = np.nanmean(y, axis=(0, 1))
-            dvdt_ste = np.nanstd(y, axis=(0, 1)) / np.sqrt(N_SEEDS)
+            with warnings.catch_warnings():  # A seed without trials of the type in the window is left out
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                seed_means = np.nanmean(y, axis=1)
+            dvdt_mean = np.nanmean(seed_means, axis=0)
+            dvdt_ste = nan_sem(seed_means, axis=0)
 
             # Bar plot
             axs[r0 + j].bar(
@@ -821,18 +913,22 @@ def plot_v_hat(saving=True, outcome_types: tuple[Outcome, ...] = (Outcome.HIT, O
     save_or_show(saving=saving, plot_dir=get_plot_dir(fast), plot_name=save_name, plot_dpi=150)
 
 
-def plot_apical_raster(outcome: Outcome, expert_aligned: bool = False, fast: bool = False) -> None:
+def plot_apical_raster(outcome: Outcome, expert_aligned: bool = False, fast: bool = False,
+                       min_trials: int = MIN_RASTER_TRIALS) -> None:
     """
     Raster plots of the evolution of responses for each apical dendrite type (sensory and outcome dendrites) of the
     initially go-selective and no-go-selective neurons (the outcome dendrites receive the same input in every neuron)
-    during a specific trial type of choice.
+    during a specific trial type of choice. Each row averages the trials of that type in a batch of trials over all
+    seeds, the batch widened until it holds min_trials of them (CR trials are rare while the agents learn to lick, FA
+    trials once they are expert).
     :param outcome: Outcome identifier specifying the trial type (Hit, Miss, CR or FA)
     :param expert_aligned: Whether to align trials to the first expert trial
     :param fast: whether to plot the simulation of the fast-learning regime
+    :param min_trials: minimal number of trials of the type, pooled over the seeds, averaged in a row
     """
     rows = 2
     cols = 2
-    batch_size = 20
+    batch_size = RASTER_BATCH
     set_style()
     cmap = get_parula_cm()
     cmap.set_bad(color='k')
@@ -861,21 +957,13 @@ def plot_apical_raster(outcome: Outcome, expert_aligned: bool = False, fast: boo
             outcome_spec_data = np.array(get_outcome_specific(outcome=outcome, outcomes=outcomes, values=data))
             apical = np.zeros((n_batches, N_TIME_STEPS))
             if i == 0:  # The outcome dendrites are only active at the outcome
-                if batch_size > 1:
-                    for b in range(n_batches):
-                        apical[b, -1] = np.nanmean(outcome_spec_data[:, b * batch_size:(b + 1) * batch_size])
-                else:
-                    apical[:, -1] = np.nanmean(outcome_spec_data, axis=0)
+                apical[:, -1] = batch_nan_mean_widened(values=outcome_spec_data, batch_size=batch_size,
+                                                       min_trials=min_trials)
             else:
-                if batch_size > 1:
-                    for b in range(n_batches):
-                        apical[b, :] = np.nanmean(outcome_spec_data[:, b * batch_size:(b + 1) * batch_size, :],
-                                                  axis=(0, 1))
-                else:
-                    apical = np.nanmean(outcome_spec_data, axis=0)
+                apical = batch_nan_mean_widened(values=outcome_spec_data, batch_size=batch_size, min_trials=min_trials)
             img = np.pad(array=apical, pad_width=((0, 0), (HZ, 1)))
             axs[i, j].imshow(img, aspect='auto', extent=(0, END_T, t_max, t_min),
-                             vmin=apical_transfer(0.), vmax=1., cmap=cmap)
+                             vmin=apical_transfer(0.), vmax=1., cmap=cmap, interpolation=RASTER_INTERPOLATION)
             plot_t(ax=axs[i, j], y=t_max + (t_max-t_min) * 0.02)
             c_map_ax = axs[i, j].inset_axes([0., cb_width, cb_width, 1 - cb_width])
             cb = matplotlib.colorbar.ColorbarBase(c_map_ax, cmap=p_cmap, orientation='vertical')
@@ -991,11 +1079,15 @@ def plot_apical_trace_boxplot(saving=True, verbose: bool = False, outcome: Outco
 
     ys = get_window_activity(expert_aligned=True)
 
-    # Plot traces with standard error
+    # Plot traces with standard error: mean of each seed over its trials in each batch, then mean +- s.e.m. over the
+    # seeds (a seed without trials of the type in a batch left out of it)
     for dendrite_type in range(n_branches):
         for trial_window in window_ids:
-            y = {"mean": batch_nan_stat(ys[dendrite_type, trial_window, :, :], batch_size=batch_size),
-                 "std": batch_nan_stat(ys[dendrite_type, trial_window, :, :], batch_size=batch_size, stat='std') / np.sqrt(N_SEEDS)}
+            seed_means = np.array([batch_nan_stat(values, batch_size=batch_size)
+                                   for values in ys[dendrite_type, trial_window, :, :]])  # Seeds x batches
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                y = {"mean": np.nanmean(seed_means, axis=0), "std": nan_sem(seed_means, axis=0)}
             trials = np.linspace(start=N_EXPERTS-nt, stop=N_EXPERTS, num=len(y['mean']), endpoint=False)
             plot_trace(
                 trials, y, color=tcolors[trial_window], label=window_labels[trial_window], ax=axs[dendrite_type], alpha=0.2
@@ -1040,6 +1132,7 @@ def plot_apical_trace_boxplot(saving=True, verbose: bool = False, outcome: Outco
     sub_sub_figs = sub_figs[1].subfigures(2, 1)
     n_trial_windows = 3
     boxplot_style = {'showfliers': False,
+                     'whis': (5, 95),  # Whiskers at the 5th and 95th percentile, as in the box plots of the 2P data
                      'widths': 0.4,
                      'medianprops': {'color': 'k', 'linewidth': AXIS_WIDTH, 'solid_capstyle': 'butt'},
                      'boxprops': {'linewidth': 0, 'facecolor': 'k'},
@@ -1152,15 +1245,17 @@ def f4e_apical_dendrites_raster_plots(saving: bool = True, fast: bool = False) -
 
 def f4e_soma_raster_plots(saving: bool = True, expert_aligned: bool = False, fast: bool = False):
     """
-    Raster plots of the evolution of the mean somatic activity in the texture window of the initially go-selective and
-    of the initially no-go-selective neurons during each type of trial (Hit, CR, FA, Miss).
+    Raster plots of the evolution of the mean somatic activity in the texture window, one figure for the texture 1 (go)
+    trials and one for the texture 2 (no-go) trials, with the initially go-selective neurons in the top row, the
+    initially no-go-selective ones in the bottom row and the lick (Hit or FA) and no-lick (Miss or CR) trials in the
+    columns, each row of a raster averaging at least MIN_RASTER_TRIALS trials of the type (see plot_apical_raster).
     :param saving: boolean encoding whether to save (or just display) the plot.
     :param expert_aligned: Whether to align trials to the first expert trial
     :param fast: whether to plot the simulation of the fast-learning regime
     """
     rows = 2
     cols = 2
-    batch_size = 50
+    batch_size = RASTER_BATCH
     if expert_aligned:
         y_ticks = [-400, -200, 0]
         n_trials = N_BEFORE_EXPERT + N_EXPERTS
@@ -1178,24 +1273,20 @@ def f4e_soma_raster_plots(saving: bool = True, expert_aligned: bool = False, fas
     results = get_results(fast=fast)
     selective = [get_texture_selective(result=r) for r in results]
     outcomes = get_trials(values=[r[K_OUTCOME] for r in results], results=results, expert_aligned=expert_aligned)
-    outcome_types = [[Outcome.HIT, Outcome.MISS], [Outcome.FA, Outcome.CR]]
+    outcome_types = [[Outcome.HIT, Outcome.MISS], [Outcome.FA, Outcome.CR]]  # Lick and no-lick, texture 1 and 2 trials
+    data = [get_trials(values=[np.mean(r[K_X_SOM_TXT][:, sel[i]], axis=1) for r, sel in zip(results, selective)],
+                       results=results, expert_aligned=expert_aligned) for i in range(rows)]
     for k in range(2):
-        data = get_trials(values=[np.mean(r[K_X_SOM_TXT][:, sel[k]], axis=1) for r, sel in zip(results, selective)],
-                          results=results, expert_aligned=expert_aligned)
         fig, axs = plt.subplots(nrows=rows, ncols=cols, figsize=(cols * PANEL_WIDTH, rows * PANEL_HEIGHT))
         for i in range(rows):
             for j in range(cols):
-                out_spec_data = np.abs(np.array(get_outcome_specific(outcome=outcome_types[i][j], outcomes=outcomes,
-                                                                     values=data)))
+                out_spec_data = np.abs(np.array(get_outcome_specific(outcome=outcome_types[k][j], outcomes=outcomes,
+                                                                     values=data[i])))
                 mean_data = np.zeros((n_batches, END_T))
-                if batch_size > 1:
-                    for b in range(n_batches):
-                        mean_data[b, TEXTURE_T] = np.nanmean(out_spec_data[:, b * batch_size:(b + 1) * batch_size])
-                else:
-                    mean_data = np.nanmean(out_spec_data, axis=0)
-                mean_data[np.isnan(mean_data)] = 0
+                mean_data[:, TEXTURE_T] = batch_nan_mean_widened(values=out_spec_data, batch_size=batch_size,
+                                                                 min_trials=MIN_RASTER_TRIALS)
                 axs[i, j].imshow(mean_data, aspect='auto', extent=(0, END_T, t_max, t_min), vmin=0.,
-                                 vmax=5., cmap=cmap)
+                                 vmax=5., cmap=cmap, interpolation=RASTER_INTERPOLATION)
                 plot_t(ax=axs[i, j], y=t_max + (t_max-t_min) * 0.02)
                 c_map_ax = axs[i, j].inset_axes([0., cb_width, cb_width, 1 - cb_width])
                 cb = matplotlib.colorbar.ColorbarBase(c_map_ax, cmap=p_cmap, orientation='vertical')
@@ -1233,6 +1324,8 @@ def f4f_sen_dendrite(saving: bool = True, expert_aligned: bool = False, fast: bo
       pyramidal neurons (with learning): the initially cue-, go- and no-go-selective neurons and all the other neurons
     - Evolution of the multiplicative gains of different stimuli with learning (for the selective neurons at the time of
       their stimulus, for the others at the time of their strongest basal input)
+    Each line is the mean +- s.e.m. over the seeds of each seed's mean over the neurons of the group, in batches of
+    trials
     :param saving: boolean encoding whether to save (or just display) the plot.
     :param expert_aligned: Whether to align trials to the first expert trial
     :param fast: whether to plot the simulation of the fast-learning regime
@@ -1282,11 +1375,13 @@ def f4f_sen_dendrite(saving: bool = True, expert_aligned: bool = False, fast: bo
                 values = [get_gains(result=r, neurons=g[i], time_step=time_steps[i]) for r, g in zip(results, groups)]
             else:  # The recorded gains, at the time step of the strongest initial basal input of each neuron
                 values = [r[keys[row]][:, g[i]] for r, g in zip(results, groups)]
-            data = np.concatenate(get_trials(values=values, results=results, expert_aligned=expert_aligned), axis=1)
-            st_err = np.zeros(n_batches)
-            for b in range(n_batches):
-                mean_data[b, i] = np.nanmean(data[b * batch_size:(b + 1) * batch_size])
-                st_err[b] = np.nanstd(data[b * batch_size:(b + 1) * batch_size]) / np.sqrt(batch_size)
+            # Mean of each seed over the neurons of the group and the trials of each batch, then mean +- s.e.m. over
+            # the seeds
+            data = get_trials(values=values, results=results, expert_aligned=expert_aligned)
+            seed_means = np.array([[np.nanmean(d[b * batch_size:(b + 1) * batch_size], dtype=np.float64)
+                                    for b in range(n_batches)] for d in data])
+            mean_data[:, i] = np.nanmean(seed_means, axis=0)
+            st_err = nan_sem(seed_means, axis=0)
             axs[row].fill_betweenx(trials, mean_data[:, i] - st_err, mean_data[:, i] + st_err,
                                           color=plot_cols[i], alpha=0.3, linewidth=0.)
         for i in range(4):
@@ -1316,30 +1411,30 @@ def f4g_apical_window_traces(saving=True, verbose: bool = False, fast: bool = Fa
 
 
 def plot_inhibition_performance(saving: bool, plot_name: str, simulation: Simulation = Simulation.DEFAULT,
-                                fast: bool = False, plot_dir: Path = None) -> None:
+                                fast: bool = False, plot_dir: Path = None, color: str = 'grey') -> None:
     """
-    Performance traces of each seed without apical inhibition (grey) and with the apical dendrites inhibited for the
-    first N_TRIALS trials (green), as in fig. 4h
+    Performance traces of each seed without apical inhibition (grey; every simulated trial, the N_TRIALS_CONTROL of the
+    default simulation with the trace estimated over all of them) and with the apical dendrites inhibited for the first
+    N_TRIALS trials (green), as in fig. 4h
     :param saving: boolean encoding whether to save (or just display) the plot.
     :param plot_name: file name under which to save the plot
     :param simulation: Simulation.DEFAULT for the model without bottom-up plasticity (Simulation.APICAL_INHIBITION in
     the inhibition protocol) or a bottom-up plasticity simulation (both protocols of its rule)
     :param fast: whether to plot the simulations of the fast-learning regime
     :param plot_dir: directory in which to save the plot (None: that of the learning regime, see get_plot_dir)
+    :param color: color of the traces without apical inhibition
     """
     n_plot_seeds = N_SEEDS
     set_style()
     fig, ax = plt.subplots(figsize=(PANEL_WIDTH, PANEL_HEIGHT))
-    max_t = [N_TRIALS, N_TRIALS_AP_INH]
-    plot_col = ["grey", COL_RESTORED]
+    plot_col = [color, COL_RESTORED]
     plt.plot([0, N_TRIALS_AP_INH], [0.5, 0.5], "k:")
-    trials = np.arange(N_TRIALS_AP_INH)
     for sim in reversed(range(2)):  # The inhibition protocol first
-        results = get_bu_results(simulation=simulation, inhibition=sim == 1, fast=fast)
+        results = get_bu_results(simulation=simulation, inhibition=sim == 1, fast=fast, all_trials=True)
         for s in range(n_plot_seeds):
-            plt.plot(trials[:max_t[sim]], results[s][K_PERFORMANCE][:max_t[sim]],
-                     plot_col[sim], zorder=0)
-    plt.xlim([0, max_t[1]])
+            performance = results[s].get(K_PERFORMANCE_ALL, results[s][K_PERFORMANCE])
+            plt.plot(np.arange(len(performance) - 1), performance[:-1], plot_col[sim], zorder=0)
+    plt.xlim([0, N_TRIALS_AP_INH])
     y_min = 0.25
     plt.ylim([y_min, 1])
     plt.plot([0, N_TRIALS_AP_INH], [y_min + 0.07, y_min + 0.07], linewidth=3, color="w", zorder=1)
@@ -1404,12 +1499,12 @@ def plot_inhibition_expert_trials(saving: bool, plot_name: str, simulation: Simu
         expert_t = [results[s][K_EXPERT_T] for s in range(N_SEEDS)]
         xp_ts[sim] = np.array(expert_t)
         plt.barh(plot_order[sim], np.nanmean(expert_t), capsize=3.5, linewidth=1., edgecolor=plot_col[sim],
-                 color=(1, 1, 1, 0.), xerr=np.nanstd(expert_t), align='center', fc=face_col[sim])
+                 color=(1, 1, 1, 0.), xerr=np.nanstd(expert_t, ddof=1), align='center', fc=face_col[sim])
         plt.plot(expert_t, [plot_order[sim]] * N_SEEDS, 'ko', alpha=1, markersize=1)
         if verbose:
-            print(f'{np.nanmean(expert_t):.0f} ± {np.nanstd(expert_t):.0f}')
+            print(f'{np.nanmean(expert_t):.0f} ± {np.nanstd(expert_t, ddof=1):.0f}')
     plt.barh(1, np.nanmean(xp_ts[1]-1800), capsize=3.5, linewidth=1., edgecolor='k',
-             color=(1, 1, 1, 0.), xerr=np.nanstd(xp_ts[1]-1800), align='center')
+             color=(1, 1, 1, 0.), xerr=np.nanstd(xp_ts[1]-1800, ddof=1), align='center')
     plt.plot(xp_ts[1]-1800, [1] * N_SEEDS, 'ko', alpha=1, markersize=1)
     plt.vlines(x=N_TRIALS, ymin=-0.5, ymax=2.5)
     plt.xlabel("Trial")
@@ -1454,7 +1549,8 @@ def plot_inhibition_w_ap(saving: bool, plot_name: str, simulation: Simulation = 
     Evolution of the excitatory synaptic weights on the sensory dendrites with learning, without and with apical
     inhibition, as in fig. 4h: mean apical weight w_ap, in each seed, of the neurons that are texture-selective (go- or
     no-go-selective, solid lines) and of those that are texture-unresponsive (dashed lines) in the first N_PHASE_TRIALS
-    trials of each protocol (the classes of fig. S12d)
+    trials of each protocol (the classes of fig. S12d), over every simulated trial (N_TRIALS_CONTROL of the default
+    simulation without inhibition, as in the performance panel)
     :param saving: boolean encoding whether to save (or just display) the plot.
     :param plot_name: file name under which to save the plot
     :param simulation: Simulation.DEFAULT for the model without bottom-up plasticity (Simulation.APICAL_INHIBITION in
@@ -1468,7 +1564,7 @@ def plot_inhibition_w_ap(saving: bool, plot_name: str, simulation: Simulation = 
     plotcols = ['grey', COL_RESTORED]
     line_styles = ['-', '--']  # The texture-selective and the texture-unresponsive neurons
     for i in [1, 0]:
-        results = get_bu_results(simulation=simulation, inhibition=i == 1, fast=fast)
+        results = get_bu_results(simulation=simulation, inhibition=i == 1, fast=fast, all_trials=True)
         trials = np.arange(len(results[0][K_W_AP]))
         for r in results:
             go, nogo = get_texture_selective(result=r)
@@ -1652,7 +1748,8 @@ def fs12b_wap_traces(saving: bool = False, fast: bool = False):
     save_or_show(saving=saving, plot_dir=get_plot_dir(fast), plot_name='fig_s12b_w_ap_traces')
 
 
-def plot_theta0_w_ap(saving: bool, plot_name: str, fast: bool = False, plot_dir: Path = None) -> None:
+def plot_theta0_w_ap(saving: bool, plot_name: str, fast: bool = False, plot_dir: Path = None,
+                     colorbars: bool = False) -> None:
     """
     Sensory dendrite synapse strength after 1800 trials for pyramidal neurons depending on their bottom-up selectivity
     for the go-stimulus (which is encoded by the basal synaptic strength of the texture 1 input) and on the chosen
@@ -1663,6 +1760,8 @@ def plot_theta0_w_ap(saving: bool, plot_name: str, fast: bool = False, plot_dir:
     :param plot_name: file name under which to save the plot
     :param fast: whether to plot the theta_0 sweep of the fast-learning regime
     :param plot_dir: directory in which to save the plot (None: that of the learning regime, see get_plot_dir)
+    :param colorbars: whether to draw the colorbars of the bins of initial basal weight (those of fig. S12b's traces)
+    horizontally above the axes, as long as the x axis line and with the axes lowered to make room
     """
     n_available_bins = 20
     theta_0 = get_thetas_0(fast=fast)
@@ -1707,7 +1806,8 @@ def plot_theta0_w_ap(saving: bool, plot_name: str, fast: bool = False, plot_dir:
     for k in range(ns):
         cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", [COL_DISTRACTOR, colors[k]])
         for b in range(n_bins):
-            axs[k].plot(theta_0, w_ap_final_mean[k, :, b], marker='.', color=cmap(b/(n_bins-1.)), ms=MARKER_SIZE)
+            axs[k].plot(theta_0, w_ap_final_mean[k, :, b], marker='.', color=cmap(b/(n_bins-1.)), ms=MARKER_SIZE,
+                        clip_on=False)  # The markers at 0 on the axis, not cut
         if diverged:  # The smallest values of theta_0 (in the fast-learning regime)
             axs[k].axvspan(theta_0[0], max(diverged) + 0.25, color=COL_DIVERGED, linewidth=0, zorder=0)
             axs[k].text((theta_0[0] + max(diverged) + 0.25) / 2, 0.5, 'Diverges', rotation=90, ha='center',
@@ -1717,6 +1817,8 @@ def plot_theta0_w_ap(saving: bool, plot_name: str, fast: bool = False, plot_dir:
         axs[k].vlines(x=HYPERPARAMETERS['fast' if fast else 'biological']['theta_0'], ymin=0, ymax=1, color='k',
                       linestyle='--', linewidth=AXIS_WIDTH, zorder=1)
         axs[k].spines[['right', 'top']].set_visible(False)
+        axs[k].set_ylim(0., 1.05)  # The axes at w_ap = 0 and theta_0 = 1 (user, 2026-11-03)
+        axs[k].set_xlim(left=theta_0[0])
         axs[k].spines['left'].set_bounds(0, 1)
         axs[k].spines['bottom'].set_bounds(theta_0[0], theta_0[-1])
         axs[k].set_xticks([t for t in theta_0 if t == round(t)])
@@ -1728,6 +1830,27 @@ def plot_theta0_w_ap(saving: bool, plot_name: str, fast: bool = False, plot_dir:
     axs[0].set_ylabel('$w^{ap}$')
 
     adjust_figure(fig=fig, w_space=0.15)
+    if colorbars:  # As in fig. S12b's traces, horizontal, with the end ticks and the label in one row above each bar
+        fig.subplots_adjust(top=fig.subplotpars.top - THETA0_COLORBAR_ROOM / fig.get_size_inches()[1])
+        c_labels = ['$w^{bas}_{Go}$', '$w^{bas}_{NoGo}$']
+        bounds = np.linspace(0., 1, n_bins + 1, endpoint=True)
+        for k in range(ns):
+            cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", [COL_DISTRACTOR, colors[k]])
+            norm = matplotlib.colors.Normalize(vmin=0.5 / n_bins, vmax=1 - 0.5 / n_bins)
+            # As long as the x axis line (theta_0 from the first to the last value), x in data coordinates
+            c_ax = axs[k].inset_axes([theta_0[0], 1.12, theta_0[-1] - theta_0[0], 0.04],
+                                     transform=axs[k].get_xaxis_transform())
+            cbar = matplotlib.colorbar.ColorbarBase(c_ax, cmap=cmap, norm=norm, boundaries=bounds, ticks=bounds,
+                                                    orientation='horizontal')
+            c_ax.xaxis.set_ticks_position('top')
+            c_ax.set_xticklabels(c_tick_labels)
+            c_ax.tick_params(axis='x', pad=1.)
+            end_labels = c_ax.get_xticklabels()  # Aligned inwards, so the two bars' end labels stay apart
+            end_labels[0].set_horizontalalignment('left')
+            end_labels[-1].set_horizontalalignment('right')
+            c_ax.annotate(c_labels[k], xy=(0.5, 1.), xycoords='axes fraction', xytext=(0., 3.5),
+                          textcoords='offset points', ha='center', va='bottom')  # Above the tick marks
+            cbar.outline.set_linewidth(AXIS_WIDTH)
     save_or_show(saving=saving, plot_dir=get_plot_dir(fast) if plot_dir is None else plot_dir, plot_name=plot_name)
 
 
@@ -1926,7 +2049,7 @@ def plot_bu_performance(saving: bool, plot_name: str, inhibition: bool = False, 
     set_style()
     conditions = get_bu_conditions(fast=fast)
     fig, ax = plt.subplots(figsize=(PANEL_WIDTH, PANEL_HEIGHT))
-    n_trials = get_n_trials(simulation=Simulation.APICAL_INHIBITION if inhibition else Simulation.DEFAULT)
+    n_trials = get_shown_trials(inhibition=inhibition)
     ax.plot([0, n_trials], [0.5, 0.5], 'k:')
     for simulation in conditions:
         results = get_bu_results(simulation=simulation, inhibition=inhibition, fast=fast)
@@ -2082,9 +2205,8 @@ def plot_bu_detectors(saving: bool, plot_name: str, fast: bool = False) -> None:
             y_max = max(y_max, np.max(detectors))
             ax.plot(trials, detectors, color=BU_COLORS[simulation], linestyle='--' if inhibition else '-')
     for k, inhibition in enumerate((False, True)):
-        plot_inhibition_bar(ax=ax, y=0.08 - 0.05 * k, n_trials=get_n_trials(
-            simulation=Simulation.APICAL_INHIBITION if inhibition else Simulation.DEFAULT), inhibited=inhibition,
-                            height=0.025)
+        plot_inhibition_bar(ax=ax, y=0.08 - 0.05 * k, n_trials=get_shown_trials(inhibition=inhibition),
+                            inhibited=inhibition, height=0.025)
     ax.text(-0.02, 0., "Apical\ninhibition", transform=ax.transAxes, ha="right")
     y_lim = 1.15 * y_max
     ax.set_ylim([-0.25 * y_lim, y_lim])  # The bars below the traces as in fig. 4h
@@ -2229,55 +2351,105 @@ def plot_bu_apical_responses(saving: bool, plot_name: str, fast: bool = False) -
 
 
 def plot_paired_expert_trials(saving: bool, plot_name: str, plot_dir: Path, expert_trials: dict,
-                              labels: tuple[str, str], colors: tuple[str, str], verbose: bool = False) -> None:
+                              labels: tuple[str, ...], colors: tuple[str, ...], verbose: bool = False,
+                              censored_at: float = None, center: str = 'mean',
+                              pairs: tuple[tuple[int, int], ...] = None) -> None:
     """
-    Trials to expert performance of each seed in two conditions, without apical inhibition (unperturbed) and after the
-    end of the apical inhibition (corrected: counted from trial N_TRIALS on). The seeds are paired (a seed draws the
-    same initial weights and stimuli in both conditions; lines), and the significance is that of the paired difference
-    (Wilcoxon signed-rank test)
+    Trials to expert performance of each seed in two or more conditions, without apical inhibition (unperturbed) and
+    after the end of the apical inhibition (corrected: counted from trial N_TRIALS on). The seeds are paired (a seed
+    draws the same initial weights and stimuli in every condition; lines), and the significance is that of the paired
+    difference between neighbouring conditions (Wilcoxon signed-rank test) over the seeds expert in both, or with
+    censored_at over all seeds, a seed that does not become expert counted at censored_at (a lower bound of its trials
+    to expert, so that it enters the test as slower than a seed that does). A seed that does not become expert is drawn
+    as an open marker in a row above the axis ('n.e.'), one that becomes expert during the inhibition at 0 in the
+    corrected protocol
     :param saving: boolean encoding whether to save (or just display) the plot.
     :param plot_name: file name under which to save the plot
     :param plot_dir: directory in which to save the plot
-    :param expert_trials: for each protocol (False: unperturbed, True: corrected) the expert trials of each seed in the
-    two conditions (conditions x seeds, nan if not expert)
-    :param labels: labels of the two conditions (a space breaks the tick label into two lines)
-    :param colors: colors of the markers of the two conditions
+    :param expert_trials: for each protocol to draw (False: unperturbed, True: corrected) the expert trials of each seed
+    in the conditions (conditions x seeds, nan if not expert)
+    :param labels: labels of the conditions (a space breaks the tick label into two lines)
+    :param colors: colors of the markers of the conditions
     :param verbose: boolean encoding whether to print the expert trials and the statistical tests
+    :param censored_at: trials to expert at which to count a seed that does not become expert in the test (None: such
+    seeds are left out of it)
+    :param center: statistic of the bars, 'mean' or 'median' (with the seeds that are not expert at the top, which
+    leaves the median defined while they are fewer than half)
+    :param pairs: the pairs of conditions to test (indices into labels), each bracket on the lowest level where it
+    overlaps no other, neighbouring ones side by side (None: all neighbouring conditions, side by side)
     """
     set_style()
     fig, ax = plt.subplots(figsize=(PANEL_WIDTH, PANEL_HEIGHT))
-    protocol_labels = ('Unperturbed', 'Corrected')
-    group_offset = 2.6  # Distance between the two protocols on the x-axis
+    protocol_labels = {False: 'Unperturbed', True: 'Corrected'}
+    protocols = list(expert_trials)
+    n_conditions = len(labels)
+    group_offset = n_conditions + 0.6  # Distance between the two protocols on the x-axis
     y_max = N_TRIALS
     n_lines = max(label.count(' ') + 1 for label in labels)  # Lines of the tick labels
-    for j, inhibition in enumerate((False, True)):
-        xp_ts = expert_trials[inhibition]
-        x = np.array([0., 1.]) + group_offset * j
-        ax.plot(x, xp_ts, color='grey', linewidth=AXIS_WIDTH, alpha=0.6, zorder=1)
-        for k in range(2):
-            ax.plot([x[k]] * xp_ts.shape[1], xp_ts[k], 'o', color=colors[k], markersize=MARKER_SIZE, zorder=2)
-            ax.plot(x[k] + np.array([-0.22, 0.22]), [np.nanmean(xp_ts[k])] * 2, 'k-', linewidth=2 * LINE_WIDTH,
-                    zorder=3)
-        paired = np.all(np.isfinite(xp_ts), axis=0)  # Seeds that become expert in both conditions
-        difference = xp_ts[0, paired] - xp_ts[1, paired]
-        p_value = stats.wilcoxon(difference)[1]
-        s = get_significance(p_value)
-        ax.plot(x, [1.03 * y_max] * 2, 'k-', linewidth=AXIS_WIDTH)
-        ax.text(np.mean(x), 1.03 * y_max, s, ha='center', va='bottom', weight='normal' if s == 'n.s.' else 'bold')
+    not_expert = any(np.isnan(xp_ts).any() for xp_ts in expert_trials.values())
+    # The pairs tested and the level of each bracket: the lowest level on which it overlaps no bracket placed before
+    tested_pairs = list(pairs) if pairs is not None else [(k, k + 1) for k in range(n_conditions - 1)]
+    levels = []
+    for m, (k, l) in enumerate(tested_pairs):
+        level = 0
+        while any(lv == level and min(k, l) < max(k2, l2) and min(k2, l2) < max(k, l)
+                  for (k2, l2), lv in zip(tested_pairs[:m], levels)):
+            level += 1
+        levels.append(level)
+    y_not_expert = 1.07 * y_max  # Row of the seeds that do not become expert (above the axis)
+    y_bracket = (1.16 if not_expert else 1.03) * y_max
+    for j, inhibition in enumerate(protocols):
+        xp_ts = np.maximum(expert_trials[inhibition], 0.)  # Expert during the inhibition: at 0
+        shown = np.where(np.isnan(xp_ts), y_not_expert, xp_ts)
+        x = np.arange(n_conditions, dtype=float) + group_offset * j
+        if not_expert:  # The seeds that are not expert side by side in their row
+            x_seeds = np.repeat(x[:, None], xp_ts.shape[1], axis=1)
+            for k in range(n_conditions):
+                missing = np.isnan(xp_ts[k])
+                x_seeds[k, missing] += np.linspace(-0.2, 0.2, np.sum(missing)) if np.sum(missing) > 1 else 0.
+            ax.plot(x_seeds, shown, color='grey', linewidth=AXIS_WIDTH, alpha=0.6, zorder=1)
+        else:
+            x_seeds = None
+            ax.plot(x, shown, color='grey', linewidth=AXIS_WIDTH, alpha=0.6, zorder=1)
+        for k in range(n_conditions):
+            expert = np.isfinite(xp_ts[k])
+            ax.plot([x[k]] * np.sum(expert), xp_ts[k, expert], 'o', color=colors[k], markersize=MARKER_SIZE, zorder=2)
+            if not expert.all():
+                ax.plot(x_seeds[k, ~expert], shown[k, ~expert], 'o', markerfacecolor='w', color=colors[k],
+                        markersize=MARKER_SIZE, markeredgewidth=AXIS_WIDTH, zorder=2)
+            bar = np.nanmean(xp_ts[k]) if center == 'mean' else np.median(np.where(expert, xp_ts[k], np.inf))
+            ax.plot(x[k] + np.array([-0.22, 0.22]), [bar] * 2, 'k-', linewidth=2 * LINE_WIDTH, zorder=3)
+        tested = xp_ts if censored_at is None else np.where(np.isnan(xp_ts), censored_at, xp_ts)
+        for (k, l), level in zip(tested_pairs, levels):
+            paired = np.isfinite(tested[k]) & np.isfinite(tested[l])  # Seeds in the test
+            difference = tested[k, paired] - tested[l, paired]
+            p_value = stats.wilcoxon(difference)[1] if np.sum(difference != 0) > 1 else 1.
+            s = get_significance(p_value)
+            gap = 0.06 if n_conditions > 2 else 0.  # Brackets that meet at a condition apart
+            y = y_bracket + 0.1 * y_max * level
+            ax.plot([x[k] + gap, x[l] - gap], [y] * 2, 'k-', linewidth=AXIS_WIDTH)
+            ax.text((x[k] + x[l]) / 2, y, s, ha='center', va='bottom', weight='normal' if s == 'n.s.' else 'bold')
+            if verbose:
+                print(f'{protocol_labels[inhibition]}: {labels[k]} {np.nanmean(xp_ts[k]):.0f} '
+                      f'({np.sum(np.isfinite(xp_ts[k]))} expert), {labels[l]} {np.nanmean(xp_ts[l]):.0f} '
+                      f'({np.sum(np.isfinite(xp_ts[l]))} expert), faster in {np.sum(difference > 0)} of '
+                      f'{len(difference)} seeds tested by {np.mean(difference):.0f} trials, signed-rank {s} '
+                      f'({p_value:.1e})')
         # Under the tick labels, at a distance from the axis in points (which the layout keeps, unlike a fraction of
-        # the axes height): 22 points under two lines
-        ax.annotate(protocol_labels[j], xy=(np.mean(x), 0.), xycoords=ax.get_xaxis_transform(),
-                    xytext=(0., -8. - 7. * n_lines), textcoords='offset points', ha='center', va='top')
-        if verbose:
-            print(f'{protocol_labels[j]}: {labels[0]} {np.nanmean(xp_ts[0]):.0f}, {labels[1]} '
-                  f'{np.nanmean(xp_ts[1]):.0f}, faster in {np.sum(difference > 0)} of {len(difference)} seeds by '
-                  f'{np.mean(difference):.0f} trials (not expert: {np.sum(~paired)}), signed-rank {s} ({p_value:.1e})')
+        # the axes height): 22 points under two lines; no protocol label when only one protocol is drawn
+        if len(protocols) > 1:
+            ax.annotate(protocol_labels[inhibition], xy=(np.mean(x), 0.), xycoords=ax.get_xaxis_transform(),
+                        xytext=(0., -8. - 7. * n_lines), textcoords='offset points', ha='center', va='top')
     # The labels on two lines at their spaces (one line of the rule's label would overlap the control's)
-    ax.set_xticks([0, 1, group_offset, group_offset + 1], [label.replace(' ', '\n') for label in labels] * 2)
+    ax.set_xticks(np.concatenate([np.arange(n_conditions) + group_offset * j for j in range(len(protocols))]),
+                  [label.replace(' ', '\n') for label in labels] * len(protocols))
     ax.tick_params(axis='x', length=0)
-    ax.set_xlim([-0.5, group_offset + 1.5])
-    ax.set_ylim([0, 1.12 * y_max])
-    ax.set_yticks([0, 500, 1000, 1500])
+    ax.set_xlim([-0.5, group_offset * (len(protocols) - 1) + n_conditions - 0.5])
+    ax.set_ylim([0, ((1.25 if not_expert else 1.12) + 0.1 * max(levels)) * y_max])
+    if not_expert:
+        ax.set_yticks([0, 500, 1000, 1500, y_not_expert], ['0', '500', '1000', '1500', 'n.e.'])
+    else:
+        ax.set_yticks([0, 500, 1000, 1500])
     ax.spines['left'].set_bounds(0, y_max)
     ax.set_ylabel('Trials to expert')
     ax.spines[['top', 'right', 'bottom']].set_visible(False)
@@ -2375,7 +2547,7 @@ def plot_bu_recruited_weights(saving: bool, plot_name: str, simulation: Simulati
     colors = (COL_PRE, COL_TEXTURE, COL_TEXTURE, COL_DISTRACTOR)
     line_styles = ('-', '-', '--', '-')
     for c in range(4):
-        y = {'mean': np.mean(weights[:, :, c], axis=0), 'std': np.std(weights[:, :, c], axis=0)}
+        y = {'mean': np.mean(weights[:, :, c], axis=0), 'std': np.std(weights[:, :, c], axis=0, ddof=1)}
         plot_trace(trials, y, color=colors[c], alpha=0.2, ax=ax, line_style=line_styles[c])
     ax.set_xlim([0, N_TRIALS])
     ax.set_xticks([0, 500, 1000, 1500])
@@ -2418,9 +2590,8 @@ def plot_bu_weight_change(saving: bool, plot_name: str, fast: bool = False) -> N
             y_max = max(y_max, np.max(changes))
             ax.plot(trials, changes, color=BU_COLORS[simulation], linestyle='--' if inhibition else '-')
     for k, inhibition in enumerate((False, True)):
-        plot_inhibition_bar(ax=ax, y=0.08 - 0.05 * k, n_trials=get_n_trials(
-            simulation=Simulation.APICAL_INHIBITION if inhibition else Simulation.DEFAULT), inhibited=inhibition,
-                            height=0.025)
+        plot_inhibition_bar(ax=ax, y=0.08 - 0.05 * k, n_trials=get_shown_trials(inhibition=inhibition),
+                            inhibited=inhibition, height=0.025)
     ax.text(-0.02, 0., "Apical\ninhibition", transform=ax.transAxes, ha="right")
     y_lim = 1.45 * y_max  # Room for the legend above the traces
     ax.set_ylim([-0.25 * y_lim, y_lim])  # The bars below the traces as in fig. 4h
@@ -2444,7 +2615,8 @@ def fs14b_performance(saving: bool = True) -> None:
     Performance traces with the apical bottom-up plasticity rule, with and without apical inhibition (as fig. 4h)
     :param saving: boolean encoding whether to save (or just display) the plot.
     """
-    plot_inhibition_performance(saving=saving, plot_name='fig_s14b_performance', simulation=Simulation.BU_APICAL)
+    plot_inhibition_performance(saving=saving, plot_name='fig_s14b_performance', simulation=Simulation.BU_APICAL,
+                                color=BU_COLORS[Simulation.BU_APICAL])  # The rule's color in fig. S14c
 
 
 def fs14c_paired_expert_trials(saving: bool = True, verbose: bool = False) -> None:
@@ -2485,42 +2657,87 @@ def fs14f_selectivity_distribution(saving: bool = True) -> None:
                                    legend_anchor=(1.03, 1.02))
 
 
+def plot_performance_traces(saving: bool, plot_name: str, plot_dir: Path, conditions: list[list[dict]],
+                            labels: tuple[str, ...], colors: tuple[str, ...]) -> None:
+    """
+    Performance traces of each seed in several conditions without apical inhibition, over every simulated trial (the
+    trace estimated over all of them where it exists, see get_results), with a legend of the conditions in the margin
+    above the axes
+    :param saving: boolean encoding whether to save (or just display) the plot.
+    :param plot_name: file name under which to save the plot
+    :param plot_dir: directory in which to save the plot
+    :param conditions: the results of all seeds of each condition (with all their trials)
+    :param labels: labels of the conditions
+    :param colors: colors of the conditions
+    """
+    set_style()
+    fig, ax = plt.subplots(figsize=(PANEL_WIDTH, PANEL_HEIGHT))
+    ax.plot([0, N_TRIALS_CONTROL], [0.5, 0.5], 'k:')
+    for results, color in zip(conditions, colors):
+        for r in results:
+            performance = r.get(K_PERFORMANCE_ALL, r[K_PERFORMANCE])
+            ax.plot(np.arange(len(performance) - 1), performance[:-1], color=color, linewidth=0.7 * LINE_WIDTH,
+                    zorder=1)
+    ax.set_xlim([0, N_TRIALS_CONTROL])
+    ax.set_ylim([0.3, 1])
+    ax.set_xticks([0, 500, 1000, 1500, 2000], [0, '', 1000, '', 2000])
+    ax.set_yticks([0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1], ['', '', '0.6', '', '0.8', '', '1.0'])
+    ax.set_xlabel('Trial')
+    ax.set_ylabel('Performance')
+    ax.spines[['top', 'right']].set_visible(False)
+    adjust_figure(fig=fig)
+    handles = [matplotlib.lines.Line2D([], [], color=color, linewidth=LINE_WIDTH, label=label)
+               for label, color in zip(labels, colors)]
+    fig.legend(handles=handles, loc='upper right', bbox_to_anchor=(ax.get_position().x1, 1.), frameon=False,
+               ncol=len(labels), handlelength=1.2, borderaxespad=0., borderpad=0., columnspacing=0.8,
+               handletextpad=0.4)
+    save_or_show(saving=saving, plot_dir=plot_dir, plot_name=plot_name)
+
+
 def fs15a_performance(saving: bool = True) -> None:
     """
-    Performance traces in the fast-learning regime with and without apical inhibition (as fig. 4h)
+    Performance traces of each seed of the three models of fig. S15 without apical inhibition: the fast-learning regime
+    (only gain), the gain-blind simulation (only plasticity: the policy reads the basal drive without the apical gain,
+    the basal weights learn by the apically gated Hebbian rule) and the same rule with the gain (both), over the
+    N_TRIALS_CONTROL trials of each
     :param saving: boolean encoding whether to save (or just display) the plot.
     """
-    plot_inhibition_performance(saving=saving, plot_name='fig_s15a_performance', fast=True, plot_dir=PLOT_DIR)
+    plot_performance_traces(saving=saving, plot_name='fig_s15a_performance', plot_dir=PLOT_DIR,
+                            conditions=[get_bu_results(simulation=Simulation.BU_GAIN_BLIND, all_trials=True),
+                                        get_bu_results(simulation=Simulation.DEFAULT, fast=True, all_trials=True),
+                                        get_bu_results(simulation=Simulation.BU_GATED_HEBB, fast=True,
+                                                       all_trials=True)],
+                            labels=tuple(S15_LABELS[i] for i in (1, 0, 2)),
+                            colors=tuple(S15_COLORS[i] for i in (1, 0, 2)))  # In the order of fig. S15b
 
 
 def get_regime_expert_trials() -> dict[bool, np.ndarray]:
     """
-    Get the trials to expert performance of each seed of the model without bottom-up plasticity in the biological and
-    in the fast-learning regime. A seed draws the same initial weights and the same sequence of stimuli in both
-    regimes
-    :return: for each protocol (False: without apical inhibition, True: with the apical dendrites inhibited for the
-    first N_TRIALS trials, counted from trial N_TRIALS on) the expert trials (biological and fast regime x seeds, nan
-    if not expert)
+    Get the trials to expert performance of each seed of the three models of fig. S15 without apical inhibition, in
+    the order of fig. S15b: the gain-blind simulation (only plasticity), the fast-learning regime without bottom-up
+    plasticity (only gain) and the gated Hebbian rule with the gain (both). A seed draws the same initial weights and
+    the same sequence of stimuli in all three
+    :return: for the protocol without apical inhibition (False) the expert trials (models x seeds, nan if not expert)
     """
-    expert_trials = {}
-    for inhibition in (False, True):
-        simulation = Simulation.APICAL_INHIBITION if inhibition else Simulation.DEFAULT
-        expert_trials[inhibition] = np.array([[r[K_EXPERT_T] for r in get_results(simulation=simulation, fast=fast)]
-                                              for fast in (False, True)], dtype=float) - (N_TRIALS if inhibition else 0)
-    return expert_trials
+    runs = [get_bu_results(simulation=Simulation.BU_GAIN_BLIND),
+            get_bu_results(simulation=Simulation.DEFAULT, fast=True),
+            get_bu_results(simulation=Simulation.BU_GATED_HEBB, fast=True)]
+    return {False: np.array([[r[K_EXPERT_T] for r in results] for results in runs], dtype=float)}
 
 
 def fs15b_paired_expert_trials(saving: bool = True, verbose: bool = False) -> None:
     """
-    Trials to expert of each seed in the biological and in the fast-learning regime, without apical inhibition and after
-    its end (as fig. S14c)
+    Trials to expert of each seed of the three models (only plasticity, only gain, both; user, 2026-11-04), without
+    apical inhibition (as fig. S14c, with the median), every pair tested: a seed that does not become expert within the
+    N_TRIALS trials over which the performance is estimated counts as N_TRIALS in the test
     :param saving: boolean encoding whether to save (or just display) the plot.
     :param verbose: boolean encoding whether to print the expert trials and the statistical tests
     """
     plot_paired_expert_trials(saving=saving, plot_name='fig_s15b_paired_expert_trials', plot_dir=PLOT_DIR,
                               expert_trials=get_regime_expert_trials(),
-                              labels=(REGIME_LABELS[False], REGIME_LABELS[True]),
-                              colors=(REGIME_COLORS[False], REGIME_COLORS[True]), verbose=verbose)
+                              labels=tuple(S15_LABELS[i] for i in (1, 0, 2)),
+                              colors=tuple(S15_COLORS[i] for i in (1, 0, 2)), verbose=verbose, censored_at=N_TRIALS,
+                              center='median', pairs=((0, 1), (1, 2), (0, 2)))
 
 
 def fs15c_theta0_w_ap(saving: bool = True) -> None:
@@ -2529,7 +2746,7 @@ def fs15c_theta0_w_ap(saving: bool = True) -> None:
     fast-learning regime (as fig. S12b, with the value of theta_0 of the regime marked by a dashed line)
     :param saving: boolean encoding whether to save (or just display) the plot.
     """
-    plot_theta0_w_ap(saving=saving, plot_name='fig_s15c_theta_0_w_ap', fast=True, plot_dir=PLOT_DIR)
+    plot_theta0_w_ap(saving=saving, plot_name='fig_s15c_theta_0_w_ap', fast=True, plot_dir=PLOT_DIR, colorbars=True)
 
 
 def get_theta_0_sweep(fast: bool = False) -> tuple[list[float], np.ndarray, np.ndarray]:
@@ -2569,7 +2786,8 @@ def plot_expert_trials_sweep(ax: plt.Axes, values: np.ndarray, expert: np.ndarra
     n_expert = np.sum(np.isfinite(expert), axis=1)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
-        means, stds = np.nanmean(expert, axis=1), np.nanstd(expert, axis=1)
+        means = np.nanmean(expert, axis=1)
+        stds = np.where(n_expert > 1, np.nanstd(expert, axis=1, ddof=1), 0.)  # No error bar for a single seed
     ax.plot(values, means, color=COL_FAST, zorder=1)
     for v, x in enumerate(values):
         if n_expert[v] == 0:
@@ -2745,8 +2963,8 @@ def plot_all(saving: bool = True) -> None:
     fs14d_recruited_weights(saving=saving)  # Evolution of the basal weights of the recruited neurons
     fs14e_selectivity_traces(saving=saving)  # Evolution of the selectivity with learning with the apical rule
     fs14f_selectivity_distribution(saving=saving)  # Distribution of the selectivity after learning with the apical rule
-    fs15a_performance(saving=saving)  # Performance traces in the fast-learning regime with and without inhibition
-    fs15b_paired_expert_trials(saving=saving)  # Expert trials of each seed in the two regimes
+    fs15a_performance(saving=saving)  # Performance traces in the fast-learning regime and in the gain-blind simulation
+    fs15b_paired_expert_trials(saving=saving)  # Expert trials of each seed in the two
     fs15c_theta0_w_ap(saving=saving)  # Dependence on the theta_0 parameter in the fast-learning regime
     fs15d_theta0_expert_trials(saving=saving)  # Expert trials in the theta_0 sweep of the fast-learning regime
     fs15e_learning_rates(saving=saving)  # Expert trials in the learning-rate sweeps of the fast-learning regime
@@ -2780,8 +2998,8 @@ if __name__ == '__main__':
     fs14d_recruited_weights(saving=saving)  # Evolution of the basal weights of the recruited neurons
     fs14e_selectivity_traces(saving=saving)  # Evolution of the selectivity with learning with the apical rule
     fs14f_selectivity_distribution(saving=saving)  # Distribution of the selectivity after learning with the apical rule
-    fs15a_performance(saving=saving)  # Performance traces in the fast-learning regime with and without inhibition
-    fs15b_paired_expert_trials(saving=saving)  # Expert trials of each seed in the two regimes
+    fs15a_performance(saving=saving)  # Performance traces in the fast-learning regime and in the gain-blind simulation
+    fs15b_paired_expert_trials(saving=saving)  # Expert trials of each seed in the two
     fs15c_theta0_w_ap(saving=saving)  # Dependence on the theta_0 parameter in the fast-learning regime
     fs15d_theta0_expert_trials(saving=saving)  # Expert trials in the theta_0 sweep of the fast-learning regime
     fs15e_learning_rates(saving=saving)  # Expert trials in the learning-rate sweeps of the fast-learning regime

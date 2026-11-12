@@ -20,6 +20,9 @@ INIT_SCALE = 1.89  # Total initial basal input per neuron (one third of the neur
 INIT_CLIP = 1.  # Upper bound of the initial basal weights (all basal weights stay in [0, 1])
 N_TRIALS = 1800  # Default number of trials simulated
 N_TRIALS_AP_INH = 4000  # Number of trials in case the apical dendrites are inhibited for the first 1800 trials
+N_TRIALS_CONTROL = 2200  # Number of trials of the default (and S15's) simulations without inhibition: as many with
+# active apical dendrites as the inhibition protocol has after the lift (figs. 4h and S15a show all of them, every other
+# panel the first 1800)
 MAX_GAIN = 10.  # Maximum possible apical gain
 BKG = 0.01  # Background activity of pyramidal neurons
 K_V = BKG * MAX_GAIN  # Constant for TD learning plasticity
@@ -53,13 +56,14 @@ LEARNING_RATES = ('lr_td', 'lr_policy', 'lr_ap', 'lr_trace')
 
 # Keys identifying various outcomes of the simulation
 Key = Literal[
-    'outcome', 'correct_trials', 'performance', 'learning_t', 'expert_t', 'v_hat', 'td_delta', 'w_ap', 'x_pre_t',
-    'sensory_dendrite', 'sensory_dendrite_t1', 'sensory_dendrite_t2', 'outcome_dendrite', 'gain', 'w_bas',
-    'w_bas_final', 'w_bas_history', 'w_bas_history_t', 'x_som_texture', 'x_som_cue'
+    'outcome', 'correct_trials', 'performance', 'performance_all_trials', 'learning_t', 'expert_t', 'v_hat', 'td_delta',
+    'w_ap', 'x_pre_t', 'sensory_dendrite', 'sensory_dendrite_t1', 'sensory_dendrite_t2', 'outcome_dendrite', 'gain',
+    'w_bas', 'w_bas_final', 'w_bas_history', 'w_bas_history_t', 'x_som_texture', 'x_som_cue'
 ]
 K_OUTCOME: Key = 'outcome'
 K_CORRECT_TRIALS: Key = 'correct_trials'
 K_PERFORMANCE: Key = 'performance'
+K_PERFORMANCE_ALL: Key = 'performance_all_trials'  # Trace over all trials of a run estimated over its first N_TRIALS
 K_LEARNING_T: Key = 'learning_t'
 K_EXPERT_T: Key = 'expert_t'
 K_V_HAT: Key = 'v_hat'
@@ -96,7 +100,9 @@ class Simulation(Enum):
     """
     Enumeration class for the types of simulations implemented: the model without bottom-up plasticity, with active
     apical dendrites (DEFAULT) or with the apical dendrites inhibited for the first N_TRIALS trials (APICAL_INHIBITION),
-    and the model with one of four bottom-up (basal) plasticity rules (BU_HEBB, BU_BCM, BU_CALCIUM, BU_APICAL)
+    the model with one of four bottom-up (basal) plasticity rules (BU_HEBB, BU_BCM, BU_CALCIUM, BU_APICAL), the model
+    whose policy does not see the apical gain, with an apically gated Hebbian rule (BU_GAIN_BLIND), and the same rule
+    with the gain (BU_GATED_HEBB)
     """
     DEFAULT = 0
     APICAL_INHIBITION = 1
@@ -104,16 +110,25 @@ class Simulation(Enum):
     BU_BCM = 3
     BU_CALCIUM = 4
     BU_APICAL = 5
+    BU_GAIN_BLIND = 6
+    BU_GATED_HEBB = 7
 
 
 # Bottom-up plasticity simulations
-BU_SIMULATIONS = (Simulation.BU_HEBB, Simulation.BU_BCM, Simulation.BU_CALCIUM, Simulation.BU_APICAL)
+BU_SIMULATIONS = (Simulation.BU_HEBB, Simulation.BU_BCM, Simulation.BU_CALCIUM, Simulation.BU_APICAL,
+                  Simulation.BU_GAIN_BLIND, Simulation.BU_GATED_HEBB)
 
 # Bottom-up plasticity rules in each learning regime: the bound that keeps the basal weights in [0, 1] ('soft': the
-# update is scaled by (1 - w) w, 'pre': each stimulus keeps its initial total weight onto all neurons, 'l1': each neuron
-# keeps its initial total basal input), the basal learning rate (lr_bas) and the constants of the rule (see
-# simulations.basal_rule). BU_APICAL has no setting in the fast regime: at the TD learning rate of that regime the state
-# value estimate diverges at every lr_bas
+# update is scaled by (1 - w) w, 'pre': each stimulus keeps its initial total weight onto all neurons, 'l1': each
+# neuron keeps its initial total basal input), the basal learning rate (lr_bas) and the constants of the rule (see
+# simulations.basal_rule). BU_APICAL has no setting in the fast regime: at the TD learning rate of that regime the
+# state value estimate diverges at every lr_bas. BU_GAIN_BLIND (biological regime only) also replaces the policy
+# learning rate and has its policy read the basal drive without the apical gain (policy_sees_gain), so that the apical
+# activity reaches behaviour only through the basal weights (sandbox, 2026-11-02: without the gain the policy locks
+# into licking, and the gated rule lets it learn only from a policy rate about 16 times that of the regime).
+# BU_GATED_HEBB (fast regime only) is the same rule with the gain, and also replaces theta_0 and the TD learning rate
+# (sandbox, 2026-11-03: at the regime's TD rate the rule makes the state value estimate diverge)
+GATE_POWER = 0.25  # Power of the apical gate of the BU_GAIN_BLIND and BU_GATED_HEBB rule (normalized activation)
 RULE_HYPERPARAMETERS = {
     'biological': {
         Simulation.BU_HEBB: dict(bound='soft', lr_bas=0.512, theta_bas_0=7.),
@@ -121,12 +136,16 @@ RULE_HYPERPARAMETERS = {
         Simulation.BU_CALCIUM: dict(bound='pre', lr_bas=0.016, ca_theta_p=1.5, ca_ltd_frac=0.4, ca_gamma_d=2.,
                                     ca_beta=2.),
         Simulation.BU_APICAL: dict(bound='l1', lr_bas=0.005, xbar_tau=50.),
+        Simulation.BU_GAIN_BLIND: dict(bound='l1', lr_bas=0.512, theta_bas_0=14., gate_power=GATE_POWER,
+                                       lr_policy=0.256, policy_sees_gain=False),
     },
     'fast': {
         Simulation.BU_HEBB: dict(bound='soft', lr_bas=0.512, theta_bas_0=10.),
         Simulation.BU_BCM: dict(bound='soft', lr_bas=0.256, bcm_tau=50., bcm_e0_scale=0.25),
         Simulation.BU_CALCIUM: dict(bound='l1', lr_bas=0.001, ca_theta_p=2., ca_ltd_frac=0.5, ca_gamma_d=2.,
                                     ca_beta=2.),
+        Simulation.BU_GATED_HEBB: dict(bound='l1', lr_bas=0.512, theta_bas_0=14., gate_power=GATE_POWER, theta_0=2.5,
+                                       lr_td=0.002),
     },
 }
 
@@ -203,14 +222,20 @@ def is_inhibited(simulation: Simulation, inhibition: bool = False) -> bool:
     return simulation == Simulation.APICAL_INHIBITION or inhibition
 
 
-def get_n_trials(simulation: Simulation = Simulation.DEFAULT, inhibition: bool = False) -> int:
+def get_n_trials(simulation: Simulation = Simulation.DEFAULT, inhibition: bool = False, sweep: bool = False) -> int:
     """
     Get the number of trials of a simulation.
     :param simulation: Simulation identifier
     :param inhibition: Whether the apical dendrites are inhibited (only for the bottom-up plasticity simulations)
+    :param sweep: Whether the simulation is a point of a theta_0 or learning-rate sweep (N_TRIALS trials, also for the
+    default simulation)
     :return: Number of trials
     """
-    return N_TRIALS_AP_INH if is_inhibited(simulation=simulation, inhibition=inhibition) else N_TRIALS
+    if is_inhibited(simulation=simulation, inhibition=inhibition):
+        return N_TRIALS_AP_INH
+    if simulation in (Simulation.DEFAULT, Simulation.BU_GAIN_BLIND, Simulation.BU_GATED_HEBB) and not sweep:
+        return N_TRIALS_CONTROL
+    return N_TRIALS
 
 
 def get_path(simulation: Simulation = Simulation.DEFAULT, fast: bool = False, inhibition: bool = False,
@@ -249,10 +274,11 @@ def get_rule_name(simulation: Simulation) -> str:
     """
     Get the name of the bottom-up plasticity rule of a simulation.
     :param simulation: Simulation identifier
-    :return: 'hebb', 'bcm', 'calcium' or 'apical'
+    :return: 'hebb', 'bcm', 'calcium', 'apical', 'gain_blind' or 'gated_hebb'
     """
     return {Simulation.BU_HEBB: 'hebb', Simulation.BU_BCM: 'bcm', Simulation.BU_CALCIUM: 'calcium',
-            Simulation.BU_APICAL: 'apical'}[simulation]
+            Simulation.BU_APICAL: 'apical', Simulation.BU_GAIN_BLIND: 'gain_blind',
+            Simulation.BU_GATED_HEBB: 'gated_hebb'}[simulation]
 
 
 def get_runs() -> list[tuple[Simulation, bool, bool]]:

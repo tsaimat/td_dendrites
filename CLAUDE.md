@@ -26,7 +26,7 @@ python main.py simulate      # rerun every simulation, including the performance
 python main.py perf          # extract the performance traces of the saved results again
 ```
 
-`simulate` runs the 18 runs of `get_runs()`, then the `theta_0` sweeps of the biological and of the fast regime (the
+`simulate` runs the 22 runs of `get_runs()`, then the `theta_0` sweeps of the biological and of the fast regime (the
 fast one 7.4 min) and the learning-rate sweeps of the fast regime (54 runs, 42 min). Each `simulate_seeds()` call runs
 its 10 seeds in
 parallel processes with one torch thread each (results do not depend on the thread count), adds each seed's Smith
@@ -35,30 +35,37 @@ than the simulation itself) and writes its pickle once, complete, so an interrup
 it intact.
 
 To plot a single panel interactively, call its function directly, e.g. `python -c "from l5apical.panels import *;
-f4h_performance(saving=False)"`. Every panel function takes `saving: bool`; `False` shows the figure instead of
-writing it. The panels of figs. 4 and S11 to S13 also take `fast: bool`, which plots the fast-learning runs into
-`panels/fast/` under the same file names (`plot_all_fast()` draws all of them, and `plot_all()` calls it). `python -m l5apical.panels` runs the ad-hoc block at the bottom of `panels.py` (currently plots everything
-with `saving=False`).
+f4h_performance(saving=False)"`. Every panel function takes `saving: bool`; `False` shows the figure instead of writing
+it. The panels of figs. 4 and S11 to S13 also take `fast: bool`, which plots the fast-learning runs into `panels/fast/`
+under the same file names (`plot_all_fast()` draws all of them, and `plot_all()` calls it). `python -m l5apical.panels`
+runs the ad-hoc block at the bottom of `panels.py` (currently plots everything with `saving=False`).
 
 To run one simulation: `l5apical.simulations.simulate_seeds(Simulation.X, fast=..., inhibition=...)` (`inhibition`
 only for the `BU_*` members, `Simulation.APICAL_INHIBITION` is the inhibited control; `theta_0=...` gives a sweep point
 of `DEFAULT`, and so does `lr=('lr_td', value)` for a learning rate).
 
+On a loaded machine run single-threaded (`OMP_NUM_THREADS=1`, `torch.set_num_threads(1)`): torch's default threads
+oversubscribe the cores, and `python -m sandbox.check_reproduces` took over 20 minutes for its first three cases on
+2026-11-02 (while another project's scans used 16 processes) against a few minutes single-threaded.
+
 ## Data files
 
 - `results/` holds one pickle per run, each a list of `N_SEEDS` (10) dicts keyed by the `K_*` constants of `helper.py`
   (`KEYS_1D` per-trial vectors, `KEYS_2D` trials x (time steps or neurons)). Biological regime: `results_default.pickle`
-  (`DEFAULT`), `results_perturbed.pickle` (`APICAL_INHIBITION`), `results_{hebb,bcm,calcium,apical}.pickle` and
-  `results_{hebb,bcm,calcium,apical}_perturbed.pickle` (`BU_*` without and with apical inhibition). `results/fast/`
-  holds the same files except the two `apical` ones (`BU_APICAL` has no fast-regime setting) for the fast-learning
-  regime (its `DEFAULT` and `APICAL_INHIBITION` are read by `panels/fast/` and S15), `results/theta_0/t_<theta_0>.pickle`
-  the `theta_0` sweep of `DEFAULT` and `results/fast/theta_0/t_<theta_0>.pickle` that of the fast regime (2026-10-23;
-  1 to 5 in steps of 0.5), and `results/fast/<lr>/<lr>_<value>.pickle` the learning-rate sweeps of the fast regime
-  (2026-10-24: `lr_td`, `lr_policy`, `lr_ap` and `lr_trace`, each varied alone from 1/8 to 8 times its value in
-  half-octave steps plus the quarter-octave steps next to it, `lr_trace` only up to 1; `get_learning_rates()`; the
-  value of the regime itself is the default simulation, which S15e reads from `results/fast/theta_0/t_3.0.pickle`,
-  identical to `results/fast/results_default.pickle` in every trial outcome; 1.8 MB per value, 97 MB in all).
-  `get_path()` is the single source of truth for these paths.
+  (`DEFAULT`), `results_perturbed.pickle` (`APICAL_INHIBITION`), `results_{hebb,bcm,calcium,apical,gain_blind}.pickle`
+  and `results_{hebb,bcm,calcium,apical,gain_blind}_perturbed.pickle` (`BU_*` without and with apical inhibition; the
+  `gain_blind` runs since 2026-11-02, the unperturbed one 2200 trials like `DEFAULT`). `results/fast/` holds the same
+  files except the `apical` and `gain_blind` ones (`BU_APICAL` and `BU_GAIN_BLIND` have no fast-regime setting), plus
+  `results_gated_hebb.pickle` and `results_gated_hebb_perturbed.pickle` (`BU_GATED_HEBB`, fast regime only, since
+  2026-11-03, the unperturbed one 2200 trials), for the fast-learning regime (its `DEFAULT` and `APICAL_INHIBITION` are
+  read by `panels/fast/` and S15), `results/theta_0/t_<theta_0>.pickle` the `theta_0` sweep of `DEFAULT` and
+  `results/fast/theta_0/t_<theta_0>.pickle` that of the fast regime (2026-10-23; 1 to 5 in steps of 0.5), and
+  `results/fast/<lr>/<lr>_<value>.pickle` the learning-rate sweeps of the fast regime (2026-10-24: `lr_td`, `lr_policy`,
+  `lr_ap` and `lr_trace`, each varied alone from 1/8 to 8 times its value in half-octave steps plus the quarter-octave
+  steps next to it, `lr_trace` only up to 1; `get_learning_rates()`; the value of the regime itself is the default
+  simulation, which S15e reads from `results/fast/theta_0/t_3.0.pickle`, identical to
+  `results/fast/results_default.pickle` in every trial outcome; 1.8 MB per value, 97 MB in all). `get_path()` is the
+  single source of truth for these paths.
 - A run whose weights become non-finite (the TD value estimate diverging, so far only in the fast sweeps: in the
   `theta_0` sweep every seed at 1 to 2, 2 of 10 at 2.5; in the learning-rate sweeps see Figure review) stops at the
   start of the next trial: its later trials have no outcome (nan),
@@ -67,16 +74,25 @@ of `DEFAULT`, and so does `lr=('lr_td', value)` for a learning rate).
 - Slim format (user, 2026-10-13): the trials x neurons arrays (`w_ap`, `gain`, `x_som_texture`, `x_som_cue`) are
   float32, the eligibility trace `z` is not stored, and the sweep files keep only `outcome`, `correct_trials`, `w_bas`,
   the last row of `w_ap` and the performance. `performance` is the Smith trace (one entry more than the trials),
-  `learning_t` and `expert_t` are ints counted from 0 (nan if not reached). `w_bas` holds the initial basal weights (the
-  S12 panels bin neurons by them), `w_bas_final` the final ones, and the `BU_*` runs add `w_bas_history` (snapshots
-  after trials 0, 50, ..., last) and `w_bas_history_t`. `gain` is recorded at the time steps when each neuron's
-  preferred stimulus (largest initial weight) is present, in every protocol. `x_som_texture` and `x_som_cue` are the
-  somatic activity at the texture and at the cue time step; `x_som_cue` exists since 2026-10-16 (for the cue-selective
-  neurons of f4f), so far only in `results_default.pickle` (re-simulated, every other key bit-identical), its fast twin
-  `results/fast/results_default.pickle` (re-simulated 2026-10-23, every other key bit-identical, 307 MB) and the two
-  `apical` runs (new on 2026-10-22); the other runs get it at the next `python main.py simulate` (about 1.7 GB more).
-  Sizes: 307 MB (`DEFAULT`), 518 MB (`APICAL_INHIBITION`), 284 / 625 MB (`BU_*` without / with inhibition; 356 / 786 MB
-  for `apical`, which has `x_som_cue`), 8.3 GB for the 18 runs, 1.8 MB per sweep value.
+  `learning_t` and `expert_t` are ints counted from 0 (nan if not reached). `DEFAULT` runs `N_TRIALS_CONTROL` (2200)
+  trials in both regimes since 2026-11-02 (user, for f4h: as many trials with active apical dendrites as the inhibition
+  protocol after the lift; the sweeps and the `BU_*` runs keep 1800): its performance, learning and expert trials are
+  estimated over the first 1800 trials as before (`get_performance(n_estimated)`, `get_n_estimated()`) and
+  `performance_all_trials` over all 2200 (only f4h draws it), and `get_results()` cuts every run without inhibition to
+  its first 1800 trials unless `all_trials` (only `plot_inhibition_performance()`). Trials 0 to 1799 are bit-identical
+  on every key to the 1800-trial files, and so are the estimates (the 1800-trial files are kept in
+  `sandbox/results/scratch_2026-11-02_review/default_1800/`); the estimate over all 2200 would move the expert trials by
+  up to 4 and seed 9's learning trial from 1705 to 890, which changes the learning box and the stars of f4g and S13.
+  `w_bas` holds the initial basal weights (the S12 panels bin neurons by them), `w_bas_final` the final ones, and the
+  `BU_*` runs add `w_bas_history` (snapshots after trials 0, 50, ..., last) and `w_bas_history_t`. `gain` is recorded at
+  the time steps when each neuron's preferred stimulus (largest initial weight) is present, in every protocol.
+  `x_som_texture` and `x_som_cue` are the somatic activity at the texture and at the cue time step; `x_som_cue` exists
+  since 2026-10-16 (for the cue-selective neurons of f4f), so far only in `results_default.pickle` (re-simulated, every
+  other key bit-identical), its fast twin `results/fast/results_default.pickle` (re-simulated 2026-10-23, every other
+  key bit-identical, 307 MB) and the two `apical` runs (new on 2026-10-22); the other runs get it at the next `python
+  main.py simulate` (about 1.7 GB more). Sizes: 375 MB (`DEFAULT`, 2200 trials), 518 MB (`APICAL_INHIBITION`), 284 / 625
+  MB (`BU_*` without / with inhibition; 356 / 786 MB for `apical`, which has `x_som_cue`; 434 / 786 MB for `gain_blind`
+  and `gated_hebb`), 10.8 GB for the 22 runs, 1.8 MB per sweep value.
 - The results are not stored in git (user, 2026-10-24): `/results/` is in `.gitignore`, and the LFS pointers of the
   pre-port `results_default.pickle` and `results_perturbed.pickle` were removed (history keeps them). `.gitattributes`
   still routes `*.pickle` to LFS as a guard; never `git add` a result (GitHub rejects files over 100 MB, and the
@@ -95,7 +111,7 @@ of `DEFAULT`, and so does `lr=('lr_td', value)` for a learning rate).
   `RULE_HYPERPARAMETERS` (bound, `lr_bas` and rule constants per regime and `BU_*` member; `BU_APICAL` has no
   fast-regime setting), the `Simulation` and `Outcome` enums, the apical transfer and gain functions, `get_path()` (maps
   a simulation and its `fast`, `inhibition`, `theta_0` and `lr` options to its results file), `get_bu_simulations()`
-  (the `BU_*` members with a setting in a regime), `get_runs()` (the 18 runs), `get_run_name()`, `get_thetas_0()` (the
+  (the `BU_*` members with a setting in a regime), `get_runs()` (the 22 runs), `get_run_name()`, `get_thetas_0()` (the
   sweep values of a regime), `LEARNING_RATES` and `get_learning_rates()` (the values of the learning-rate sweeps of the
   fast regime), and `smith_analysis()`, the
   Python port of the learning-curve estimator of Smith et al. (2004) (`runanalysisv3.m` and its helpers; exact
@@ -117,21 +133,31 @@ of `DEFAULT`, and so does `lr=('lr_td', value)` for a learning rate).
   (`simulate_and_analyse_seed()`), adds their performance (`get_performance()`) and pickles the list;
   `extract_performances()` redoes the performance of all saved results; `run()` does everything.
 - `panels.py`: `get_results()` loads a pickle and optionally aligns all traces to each seed's expert trial
-  (`align_to_expert()`: the `N_BEFORE_EXPERT` (500) trials before it, or `n_before`, and the `N_EXPERTS` (150) from
-  it on, nan outside the simulation). `get_texture_responsive()` is the responsiveness test of S12d (mean somatic activity in the texture
-  window above 0.1 over a range of trials), `get_texture_selective()` gives the go- and no-go-selective neurons (the
-  selective bins of S12d, go minus no-go response beyond 0.2), `get_cue_selective()` the cue-selective neurons (cue
-  response above 0.1 and above the texture response by more than 0.2), `get_sensory_dendrites()` and `get_gains()`
-  compute the sensory-dendrite activity and the gain at a time step of any group of neurons from the stored `w_ap` and
-  `x_pre_t` (exact to 1e-7 against the recorded go/no-go trace; gains exact at the cue and within 0.0002 on average at
-  the texture), and `get_trials()` returns each seed's trials, all or aligned to its expert trial. Shared helpers
-  (`plot_trace`, `plot_v_hat`, `plot_apical_raster`, `plot_apical_trace_boxplot`, `set_style`, `save_or_show`) are
-  wrapped by thin per-panel functions named after manuscript figure panels (`f4c_...`, `fs12b_...`). `plot_all()` is the
-  ordered list of every panel. All panels read the biological `DEFAULT` and `APICAL_INHIBITION` runs (S12 included, so
-  `fs12a` plots the same as `f4c`), `fs12b_theta0` the sweep, and `fs14b` to `fs14f` (the bottom-up plasticity figure,
-  draft, the apical rule only since 2026-10-23; panel a is the schematic) the biological `BU_APICAL` runs in both
-  protocols (c against the control). The panels of fig. 4h, S12c and S12c/d are thin wrappers of helpers that take a
-  `simulation` (`plot_inhibition_performance`, `plot_inhibition_expert_trials`, `plot_inhibition_w_ap`,
+  (`align_to_expert()`: the `N_BEFORE_EXPERT` (500) trials before it, or `n_before`, and the `N_EXPERTS` (150) from it
+  on, nan outside the simulation). `get_texture_responsive()` is the responsiveness test of S12d (mean somatic activity
+  in the texture window above 0.1 over a range of trials), `get_texture_selective()` gives the go- and no-go-selective
+  neurons (the selective bins of S12d, go minus no-go response beyond 0.2), `get_cue_selective()` the cue-selective
+  neurons (cue response above 0.1 and above the texture response by more than 0.2), `get_sensory_dendrites()` and
+  `get_gains()` compute the sensory-dendrite activity and the gain at a time step of any group of neurons from the
+  stored `w_ap` and `x_pre_t` (exact to 1e-7 against the recorded go/no-go trace; gains exact at the cue and within
+  0.0002 on average at the texture), and `get_trials()` returns each seed's trials, all or aligned to its expert trial.
+  Shared helpers (`plot_trace`, `plot_v_hat`, `plot_apical_raster`, `plot_apical_trace_boxplot`, `set_style`,
+  `save_or_show`) are wrapped by thin per-panel functions named after manuscript figure panels (`f4c_...`, `fs12b_...`).
+  `plot_all()` is the ordered list of every panel. f4c (and `fs12a`) plot the seed whose expert trial is closest to the
+  mean (`get_typical_seed()`, seed 5 in both regimes); the rasters of f4e and S11e average each row over at least
+  `MIN_RASTER_TRIALS` (10) trials of the plotted type pooled over the seeds (`batch_nan_mean_widened()` widens a sparse
+  row symmetrically), the dendrite and the soma rasters alike in rows of `RASTER_BATCH` (20) trials drawn with
+  `RASTER_INTERPOLATION` 'nearest' (user, 2026-11-03: the somas, in 50-trial rows, looked discretized next to the
+  dendrites; matplotlib's default 'antialiased' smooths a raster only when it is magnified less than three times, so the
+  look also depended on the row count and the output, e.g. the SVG copies); f4e's soma rasters are one figure per
+  texture (`fig_4e_t1_soma` the texture 1 trials, `fig_4e_t2_soma` the texture 2 trials; user, 2026-11-02), with the
+  initially go-selective neurons in the top row, the no-go-selective ones in the bottom row and the lick and no-lick
+  trials in the columns. The panels show the first 1800 trials of every run without inhibition (`get_shown_trials()`),
+  f4h (and S14b, S15a) every trial. All panels read the biological `DEFAULT` and `APICAL_INHIBITION` runs (S12 included,
+  so `fs12a` plots the same as `f4c`), `fs12b_theta0` the sweep, and `fs14b` to `fs14f` (the bottom-up plasticity
+  figure, draft, the apical rule only since 2026-10-23; panel a is the schematic) the biological `BU_APICAL` runs in
+  both protocols (c against the control). The panels of fig. 4h, S12c and S12c/d are thin wrappers of helpers that take
+  a `simulation` (`plot_inhibition_performance`, `plot_inhibition_expert_trials`, `plot_inhibition_w_ap`,
   `plot_selectivity_traces`, `plot_selectivity_distributions` with `phases`, `width`, `y_max` and the legend place);
   `fs14b` (the performance only), `fs14e` and `fs14f` call the first and the last two with `BU_APICAL`.
   `get_bu_results()` loads the control or a rule in either protocol, `get_bu_conditions()` lists the control and the
@@ -142,25 +168,32 @@ of `DEFAULT`, and so does `lr=('lr_td', value)` for a learning rate).
   `fast=True` for the fast regime) have no wrappers since 2026-10-23, and the PDFs of the five-condition draft are in
   `panels/s14_rules_draft/` (gitignored). `get_texture_selectivity()` and `plot_selectivity_histogram()` are shared with
   `fs12cd`. The panels of figs. 4 and S11 to S13 (not S11b/c, which does not depend on the regime) take `fast` and then
-  save into `panels/fast/` (`get_plot_dir()`, `FAST_DIR`); `plot_all_fast()` lists them. In the fast regime two
-  panels adapt by rule, leaving the biological ones pixel-identical: `plot_apical_trace_boxplot` (f4g, S13) shows the
-  whole 50-trial batches before the expert trial that every seed has (`n_before` 500 biological, 150 fast, whose
-  earliest expert trial is 189) and skips the Tukey test when a learning phase has fewer than two seeds (only seed 4
-  has one in the fast regime); `fs12b_theta0` (`plot_theta0_w_ap()`) leaves diverged seeds out and shades the
-  `theta_0` values at which every seed diverged (`COL_DIVERGED`) or some did (`COL_PARTLY_DIVERGED`). It also marks
-  the regime's `theta_0` with a dashed line in both regimes (user, 2026-10-24). S15 (draft, the
-  fast regime; layout of the user, 2026-10-24, version 3): `fs15a` is fig. 4h's performance panel in the fast regime
-  (`plot_inhibition_performance()` with `plot_dir`), `fs15b` fig. S14c's paired expert trials with the biological
-  against the fast regime (`plot_paired_expert_trials()`, which `plot_bu_paired_expert_trials()` calls for S14c), `fs15c`
-  fig. S12b's `theta_0` panel in the fast regime (`plot_theta0_w_ap()`, the same as the fast S12b replot), `fs15d`
-  the expert trials of the fast `theta_0` sweep (`get_theta_0_sweep()`) and `fs15e`, two
-  panels wide, those of the learning-rate sweeps (`get_learning_rate_sweep()`, `LR_LABELS`). d and e share
-  `plot_expert_trials_sweep()` (a cross at the regime's value) and are each laid out with the other's decoration as a
-  stand-in, replaced after `adjust_figure()` (d with a title, e with d's `theta_0` label), so that their axes have the
-  same bottom and top and the y ticks align across the row. b reads both regimes (`get_regime_expert_trials()`,
-  `REGIME_LABELS`, `REGIME_COLORS`: grey and `COL_FAST` `#2a78d6`, validated for color vision deficiencies against
-  grey and `COL_RESTORED`). Nothing plots the hebb, bcm and calcium runs or the fast `BU_*` runs.
-  Figure dimensions are in cm-derived constants at the top of the file and output is PDF at `DPI` plus an SVG copy.
+  save into `panels/fast/` (`get_plot_dir()`, `FAST_DIR`); `plot_all_fast()` lists them. In the fast regime two panels
+  adapt by rule, leaving the biological ones pixel-identical: `plot_apical_trace_boxplot` (f4g, S13) shows the whole
+  50-trial batches before the expert trial that every seed has (`n_before` 500 biological, 150 fast, whose earliest
+  expert trial is 189) and skips the Tukey test when a learning phase has fewer than two seeds (only seed 4 has one in
+  the fast regime); `fs12b_theta0` (`plot_theta0_w_ap()`) leaves diverged seeds out and shades the `theta_0` values at
+  which every seed diverged (`COL_DIVERGED`) or some did (`COL_PARTLY_DIVERGED`). It also marks the regime's `theta_0`
+  with a dashed line in both regimes (user, 2026-10-24). S15 (draft, the fast regime; layout of the user, 2026-10-24,
+  version 3): `fs15a` is fig. 4h's performance panel in the fast regime (until 2026-11-03; since then, user: "just show
+  the unperturbed cases", `fs15a` draws the unperturbed performance traces of the fast regime and of `BU_GAIN_BLIND`
+  together over 2200 trials, `plot_performance_traces()`, legend above the axes), `fs15b` fig. S14c's paired expert
+  trials, since 2026-11-03 the three optimized models without inhibition, `S15_LABELS` 'Only gain' (the fast regime),
+  'Only plasticity' (`BU_GAIN_BLIND`) and 'Both' (`BU_GATED_HEBB`), colors `S15_COLORS` (blue, orange, `COL_GATED_HEBB`
+  purple), only gain tested against each other (`pairs`, stacked brackets), with median bars and a seed that is not
+  expert counted at N_TRIALS in the signed-rank test (`plot_paired_expert_trials()`, which
+  `plot_bu_paired_expert_trials()` calls for S14c, takes any number of conditions and of protocols, tests neighbouring
+  conditions, draws seeds that are not expert as open markers in an 'n.e.' row above the axis, a seed expert during the
+  inhibition at 0 of the corrected protocol, `censored_at` and `center` 'median'; S14c renders pixel-identical), `fs15c`
+  fig. S12b's `theta_0` panel in the fast regime (`plot_theta0_w_ap()`, the same as the fast S12b replot), `fs15d` the
+  expert trials of the fast `theta_0` sweep (`get_theta_0_sweep()`) and `fs15e`, two panels wide, those of the
+  learning-rate sweeps (`get_learning_rate_sweep()`, `LR_LABELS`). d and e share `plot_expert_trials_sweep()` (a cross
+  at the regime's value) and are each laid out with the other's decoration as a stand-in, replaced after
+  `adjust_figure()` (d with a title, e with d's `theta_0` label), so that their axes have the same bottom and top and
+  the y ticks align across the row. b reads both regimes (`get_regime_expert_trials()`, `REGIME_LABELS`,
+  `REGIME_COLORS`: grey and `COL_FAST` `#2a78d6`, validated for color vision deficiencies against grey and
+  `COL_RESTORED`). Nothing plots the hebb, bcm and calcium runs or the fast `BU_*` runs. Figure dimensions are in
+  cm-derived constants at the top of the file and output is PDF at `DPI` plus an SVG copy.
 - `parula.py`: Matlab parula colormap data.
 
 Adding a new simulation variant means: an enum member in `Simulation` (and in `BU_SIMULATIONS` for a basal rule, which
@@ -168,7 +201,7 @@ Adding a new simulation variant means: an enum member in `Simulation` (and in `B
 / `get_run_name()`, its constants in `RULE_HYPERPARAMETERS`, a branch in `basal_rule()` (and its state in
 `simulate_seed()`), and for a basal rule its label and color in `BU_LABELS` and `BU_COLORS` of `panels.py`.
 
-## Work in progress (as of 2026-10-24: S15 of the fast regime in the user's layout, good for now)
+## Work in progress (as of 2026-11-02: Fig. 4 review, f4c and f4e changed, f4h awaiting a choice)
 
 Goal: a manuscript figure showing that apical top-down input can support bottom-up (basal) plasticity that speeds
 learning beyond the apical loop alone. The exploration was done in `sandbox/` (see `sandbox/README.md`); the
@@ -210,18 +243,33 @@ chronological notes of everything tried, including the rules that were set aside
   (signed-rank p 0.002), while fs14c's rank-sum test calls it n.s. (p 0.23 in both). The S14 draft panels show it as a
   fifth condition ('Apical', `#1baf7a`), pixel-identical to those on the final-rule page.
 - `theta_0` scan at the biological rates (10 seeds, 1800 trials; Smith expert trial, seeds not expert, fraction of
-  neurons with final `w_ap` above 0.5, selective neurons in the first / last 100 trials): 1.0: 1276, 2 lost, 1.00, 13
-  / 67 percent; 1.5: 1179, 2, 0.88, 13 / 60; 2.0: 1024, 1, 0.41, 13 / 34; 2.35: 1100, 0, 0.25, 13 / 23; 2.5: 1111, 0,
-  0.21, 13 / 20; 3.0: 1182, 1, 0.12, 13 / 15; 3.5: 1373, 1, 0.07; 4.0: 1532, 4, 0.04; 4.5: 9 of 10 lost; 5 to 8: no
-  seed learns (performance 0.50, `w_ap` decays to 0 in every bin). Convergence of the panel's values (largest change
-  of a bin mean over the last 300 trials): at most 0.04 up to 3.5; the most selective bin still rises by 0.07 at 4,
-  0.11 at 4.5 and 0.06 at 5. User decision (2026-10-14), made on the decision page
-  https://claude.ai/artifact/Py7sEPCCBMokPZnstY2CYm (the panel for three grids, the convergence chart and this
-  table): the grid is 1 to 5 in steps of 0.5 plus 2.35 (`get_thetas_0()`, 10 files in `results/theta_0/`). The
-  panel PNGs of the options and the convergence chart are in `panels/theta0_options/` (gitignored).
+  neurons with final `w_ap` above 0.5, selective neurons in the first / last 100 trials): 1.0: 1276, 2 lost, 1.00, 13 /
+  67 percent; 1.5: 1179, 2, 0.88, 13 / 60; 2.0: 1024, 1, 0.41, 13 / 34; 2.35: 1100, 0, 0.25, 13 / 23; 2.5: 1111, 0,
+  0.21, 13 / 20; 3.0: 1182, 1, 0.12, 13 / 15; 3.5: 1373, 1, 0.07; 4.0: 1532, 4, 0.04; 4.5: 9 of 10 lost; 5 to 8: no seed
+  learns (performance 0.50, `w_ap` decays to 0 in every bin). Convergence of the panel's values (largest change of a bin
+  mean over the last 300 trials): at most 0.04 up to 3.5; the most selective bin still rises by 0.07 at 4, 0.11 at 4.5
+  and 0.06 at 5. User decision (2026-10-14), made on the decision page `panels/theta0_options/` (published page deleted
+  2026-11-03) (the panel for three grids, the convergence chart and this table): the grid is 1 to 5 in steps of 0.5 plus
+  2.35 (`get_thetas_0()`, 10 files in `results/theta_0/`). The panel PNGs of the options and the convergence chart are
+  in `panels/theta0_options/` (gitignored).
 - Panels: the S12 panels read `DEFAULT`; fs12cd has the range -10 to 10 with values clipped into it (the pie counts
   every neuron) and the legend in the lower right; fs12c has its axis at +-`MAX_GAIN`; fs12b_theta0 has integer
   ticks. Every panel plots from the new results.
+
+### Pages (2026-11-03)
+
+The user asked to clean up the published pages and keep only up-to-date synthesized versions: **Model figure status**
+https://claude.ai/artifact/NukcwwFih8BJLRG1XAMEr4 (every panel as the code draws it, the decisions with their dates,
+the open points; source `sandbox/results/pages/figure_status.html`) and **Bottom-up plasticity record**
+https://claude.ai/artifact/RLKDcxMWXSfNuMnLYLshVd (the rule exploration and the gain-blind experiments, condensed;
+`sandbox/results/pages/plasticity_record.html`, images in `sandbox/results/pages/img/`). On 2026-11-12 the user pasted
+the old manuscript legends of figs. 4 and S11 to S13 and Table S1 into the status page; the page now holds the
+corrected legends, drafts of the S14 and S15 legends and Table S1 with one column per model (the user removed the
+review tags, the pasted versions and some rows the same day; version 18 with them is artifact history), and the
+earlier status version is in `sandbox/results/pages/figure_status_2026-11-04.html`. The 16 earlier review and
+decision pages were deleted that day; where they are cited below, their local sources are named instead. Update these
+two pages (republish the same files) rather than publishing new ones, and delete any page that a later decision
+supersedes.
 
 ### Figure review (started 2026-10-16)
 
@@ -236,7 +284,7 @@ chronological notes of everything tried, including the rules that were set aside
   trials). Same shape in every selection, smaller amplitude as it widens (touch naive to expert: go and no-go neuron
   0.31 to 0.91, responsive 0.17 to 0.47, all neurons 0.14 to 0.29; 75 percent of all neurons end with `w_ap` at or
   below 0.5 and their sensory dendrites stay at rest). Comparison page of the three:
-  https://claude.ai/artifact/DMFf5tdoR4zvCTj27FTJ7X (PNGs in `panels/f4g_options/`, gitignored).
+  `panels/f4g_options/` (published page deleted 2026-11-03) (PNGs in `panels/f4g_options/`, gitignored).
 - Fixed: the expert-aligned traces of f4g and S13 drew the 936 trials every seed has around its expert trial (841
   before, 95 after) on the -500 to +100 axis, so the dashed line sat about 150 trials before the expert trial (also in
   the original code; right only for exactly 500 before and 150 after). f4f's legend had the go and no-go neuron
@@ -260,8 +308,8 @@ chronological notes of everything tried, including the rules that were set aside
   gain is taken at each neuron's strongest initial input, the texture for only 44 to 46 percent of the texture-selective
   neurons, which would give 4.5 instead of 8.6. Legend labels "Cue-selective", "Go-selective", "NoGo-selective" (longer
   ones do not fit the panel). The soma figures keep their row labels (go group on top, no-go group below, as for the
-  single neurons). Before/after page: https://claude.ai/artifact/MEwDJUGGvdCXhK8YjFPCKr (PNGs in `panels/f4ef_options/`,
-  gitignored).
+  single neurons). Before/after page: `panels/f4ef_options/` (published page deleted 2026-11-03) (PNGs in
+  `panels/f4ef_options/`, gitignored).
 - New supplementary figure on the rules, biological regime (draft, 2026-10-16; "S14" in the names is a placeholder):
   `fs14a` / `fs14b` mean +- sd performance without / with apical inhibition (legend in b, where every condition is at
   chance), `fs14c` expert trials unperturbed and corrected (rank-sum against the control of the same protocol next to
@@ -288,10 +336,11 @@ chronological notes of everything tried, including the rules that were set aside
   7.3 (none left without input), unresponsive 50.3 percent, strongly selective 16.9 (nearly all of its 18.7 percent
   S12d-selective neurons; control 3.5 of 22.6), outcome dendrites 0.82 to 0.30, sensory dendrites at touch 0.13 to 0.46.
   Review page with the layout, the numbers, a draft legend and a fast-regime preview:
-  https://claude.ai/artifact/1QCh5kWyQZQc8wikz1JdGD. Open for the user: d as the rank profile or as the number of inputs
-  above 0.5 per neuron (alternative on the page), keep h, split e by protocol, labels ("Control", "Hebb", "BCM",
-  "Calcium"), numbering, additions (a rule schematic, tone detectors, a `rule_sees_gain` ablation at the current
-  settings). `fs12cd` now uses the shared helpers; S12d, 4e, 4f and S11e render pixel-identical to the committed code.
+  `sandbox/results/scratch_2026-10-16_22/page/bu_figure_s14.html` (published page deleted 2026-11-03). Open for the
+  user: d as the rank profile or as the number of inputs above 0.5 per neuron (alternative on the page), keep h, split e
+  by protocol, labels ("Control", "Hebb", "BCM", "Calcium"), numbering, additions (a rule schematic, tone detectors, a
+  `rule_sees_gain` ablation at the current settings). `fs12cd` now uses the shared helpers; S12d, 4e, 4f and S11e render
+  pixel-identical to the committed code.
 - Why `fs14e`'s dashed lines rise during the inhibition (user, 2026-10-16; checked in the data): the apical gain is
   exactly 1 at every step and `w_ap` never changes in the 30 inhibited runs, so the rules run on the basal drive alone.
   hebb: fixed `theta_bas` (median 0.38); a texture synapse goes to 1 when its weight plus `BKG` exceeds it, which
@@ -346,125 +395,130 @@ chronological notes of everything tried, including the rules that were set aside
   nearly) at gain 1 learned at about the control's speed. Awaiting the user's choice of variant to test at the current
   settings.
 - Gated rules re-tuned on control4 (user, 2026-10-18; sandbox only, details in `sandbox/NOTES.md`, results page
-  https://claude.ai/artifact/U1wK8J511MzycH2yrYmacp): `gated_hebb`, `burst` and `us` with control4's rates fixed and
-  only their own bound, `lr_bas` and constants free, the running averages starting at rest (user) and `burst` reading
-  the apical activation rescaled to 0 at rest (the inhibited outcome step's `x_ap` of 0 had made it potentiate during
-  inhibition). Smith expert trials over seeds 0-39, no inhibition / after the lift, every seed expert: control 1122 /
-  1163; `gated_hebb` (`l1`, `gh_post` `bas`, `lr_bas` 0.512, `theta_bas_0` 14) 657 / 638 at `gate_power` 1, 434 / 423 at
-  0.5, 403 / 385 at 0.25 (rank-sum against the control p below 1e-12); `us` (`l1`, `us_tau` 5, `lr_bas` 0.0005) 1020 /
-  1044 (p 0.048 / 0.01); `burst` (soft, `burst_kappa` 0, `burst_tau` 20, `lr_bas` 0.002) 1062 / 1082 (p 0.23 / 0.056;
-  `burst_kappa` 0.1 changes nothing). `gated_hebb` needs the un-gained drive (`som` diverges) and `l1` (soft at best
-  913, `pre` diverges). The gate power trades speed for plasticity near rest: 10, 30 and 57 percent of the change at
-  gain < 1.1 at `gate_power` 1, 0.5 and 0.25 (hebb4 95, bcm4 88, calcium4 84); outside inhibition the gain is almost
-  never exactly 1, so a small power approaches an ungated rule. All three are exactly silent during inhibition and learn
-  about as fast after the lift as without it (hebb4 and calcium4 gain from the blind trials: 330). `us` and `burst`
-  depress at gain 1 because the outcome step lifts their running averages above rest (as in September). Open for the
-  user: which gate power counts as gated, whether gated Hebb enters the main code (a fourth rule or a replacement), and
-  whether to commit `sandbox/results/gated4/` (4.5 MB).
-- Denoising or apical selection (user, 2026-10-19; page https://claude.ai/artifact/TEQc33iyRMba3qj8rfNQQM, details in
-  `sandbox/NOTES.md`): hiding the gain from the rule (`rule_sees_gain='never'`, the network keeps it) leaves hebb4,
+  `sandbox/results/scratch_2026-10-16_22/gated/page/gated_rules.html` (published page deleted 2026-11-03)):
+  `gated_hebb`, `burst` and `us` with control4's rates fixed and only their own bound, `lr_bas` and constants free, the
+  running averages starting at rest (user) and `burst` reading the apical activation rescaled to 0 at rest (the
+  inhibited outcome step's `x_ap` of 0 had made it potentiate during inhibition). Smith expert trials over seeds 0-39,
+  no inhibition / after the lift, every seed expert: control 1122 / 1163; `gated_hebb` (`l1`, `gh_post` `bas`, `lr_bas`
+  0.512, `theta_bas_0` 14) 657 / 638 at `gate_power` 1, 434 / 423 at 0.5, 403 / 385 at 0.25 (rank-sum against the
+  control p below 1e-12); `us` (`l1`, `us_tau` 5, `lr_bas` 0.0005) 1020 / 1044 (p 0.048 / 0.01); `burst` (soft,
+  `burst_kappa` 0, `burst_tau` 20, `lr_bas` 0.002) 1062 / 1082 (p 0.23 / 0.056; `burst_kappa` 0.1 changes nothing).
+  `gated_hebb` needs the un-gained drive (`som` diverges) and `l1` (soft at best 913, `pre` diverges). The gate power
+  trades speed for plasticity near rest: 10, 30 and 57 percent of the change at gain < 1.1 at `gate_power` 1, 0.5 and
+  0.25 (hebb4 95, bcm4 88, calcium4 84); outside inhibition the gain is almost never exactly 1, so a small power
+  approaches an ungated rule. All three are exactly silent during inhibition and learn about as fast after the lift as
+  without it (hebb4 and calcium4 gain from the blind trials: 330). `us` and `burst` depress at gain 1 because the
+  outcome step lifts their running averages above rest (as in September). Open for the user: which gate power counts as
+  gated, whether gated Hebb enters the main code (a fourth rule or a replacement), and whether to commit
+  `sandbox/results/gated4/` (4.5 MB).
+- Denoising or apical selection (user, 2026-10-19; page
+  `sandbox/results/scratch_2026-10-16_22/decomp/page/apical_selection.html` (published page deleted 2026-11-03), details
+  in `sandbox/NOTES.md`): hiding the gain from the rule (`rule_sees_gain='never'`, the network keeps it) leaves hebb4,
   bcm4 and calcium4 as fast as before (410, 461, 439 against 406, 458, 438 trials, seeds 0-9), and with the gain hidden
-  a lower threshold is faster still (hebb `theta_bas_0` 5: 301; calcium `ca_theta_p` 1.0: 388); gated Hebb without
-  its gate learns in 389 (`lr_bas` 0.128). The apical gain appears only as the network learns (under 3 percent of the
+  a lower threshold is faster still (hebb `theta_bas_0` 5: 301; calcium `ca_theta_p` 1.0: 388); gated Hebb without its
+  gate learns in 389 (`lr_bas` 0.128). The apical gain appears only as the network learns (under 3 percent of the
   neurons above gain 1.1 at touch in the first 200 trials) and carries 0.7, 13.7 and 2.8 percent of the rules' weight
   change up to their expert trial; the expert trial follows the inputs left per neuron at trial 300 (r 0.91 over 16
   variants). `us` and `burst` amplify whatever is active at cue and touch, and the apical input is the same for both
-  textures (one `x_pre_t` per time step), so they add unselective texture and tone detectors but no speed; freezing
-  the tone (`rule_frozen_inputs`) stops their failures at moderate rates, not their slowness. Open for the user:
-  whether the figure claims apical support of the bottom-up plasticity (that needs an apical signal present early or
-  different between go and no-go) or presents the rules as apical-independent denoising.
-- Apical-deviation rule (user, 2026-10-19; page https://claude.ai/artifact/UuEfGsvBYtXegFdyGShyqz, details in
-  `sandbox/NOTES.md`): `apdev`, dw_k = lr x_k (g - g_bar) (the x_ap version at 10 lr; silent during inhibition), best
-  1022 trials over seeds 0-9 (soft bound, `apdev_tau` 20, `lr_bas` 0.001; control 1100, unpaired p 0.5; paired by
-  seed faster in 36 of 40 seeds by 99 trials, p 1e-7, see the bullet on the rule without g_bar); every other bound
-  fails. The outcome step lifts g_bar (1.44 by trial 80), so before the cue and touch signal the rule depresses by
-  activity (the tone most); then the apical input, the same for both textures, raises both together (contrast unchanged,
-  both-texture neurons) and the tone. The control started with its texture weights x2, x4, x8 learns in 504, 286,
-  205 trials, so the user's target state is worth a lot. Open for the user: texture identity in the apical input, a
-  basal factor (gated Hebb, 641 at `gate_power` 1) or a baseline the outcome does not dominate.
-- Faster apical-deviation rule (user, 2026-10-19; page https://claude.ai/artifact/5zmyn78X7HjMjvGcppuyHG, details in
-  `sandbox/NOTES.md`): faster is worse. From trial 1, `lr_bas` 0.0005 to 0.004 give 1050 to 1183 trials, 0.008 3 of
-  10 seeds, 0.016 to 0.128 at most 1; switched on at trial 500 (`rule_start_trial`), 0.001 1046, 0.002 4 of 10, more
-  at most 1 (tone frozen too: 953 at 0.002, at most 1 of 10 above). Before the touch signal (no neuron above g_bar
-  before trial 500) the rule only depresses, which keeps neurons from being recruited (touch gain above g_bar at
+  textures (one `x_pre_t` per time step), so they add unselective texture and tone detectors but no speed; freezing the
+  tone (`rule_frozen_inputs`) stops their failures at moderate rates, not their slowness. Open for the user: whether the
+  figure claims apical support of the bottom-up plasticity (that needs an apical signal present early or different
+  between go and no-go) or presents the rules as apical-independent denoising.
+- Apical-deviation rule (user, 2026-10-19; page `sandbox/results/scratch_2026-10-16_22/apdev/page/apdev_rule.html`
+  (published page deleted 2026-11-03), details in `sandbox/NOTES.md`): `apdev`, dw_k = lr x_k (g - g_bar) (the x_ap
+  version at 10 lr; silent during inhibition), best 1022 trials over seeds 0-9 (soft bound, `apdev_tau` 20, `lr_bas`
+  0.001; control 1100, unpaired p 0.5; paired by seed faster in 36 of 40 seeds by 99 trials, p 1e-7, see the bullet on
+  the rule without g_bar); every other bound fails. The outcome step lifts g_bar (1.44 by trial 80), so before the cue
+  and touch signal the rule depresses by activity (the tone most); then the apical input, the same for both textures,
+  raises both together (contrast unchanged, both-texture neurons) and the tone. The control started with its texture
+  weights x2, x4, x8 learns in 504, 286, 205 trials, so the user's target state is worth a lot. Open for the user:
+  texture identity in the apical input, a basal factor (gated Hebb, 641 at `gate_power` 1) or a baseline the outcome
+  does not dominate.
+- Faster apical-deviation rule (user, 2026-10-19; page
+  `sandbox/results/scratch_2026-10-16_22/apdev/page_rates/apical_rule_rates.html` (published page deleted 2026-11-03),
+  details in `sandbox/NOTES.md`): faster is worse. From trial 1, `lr_bas` 0.0005 to 0.004 give 1050 to 1183 trials,
+  0.008 3 of 10 seeds, 0.016 to 0.128 at most 1; switched on at trial 500 (`rule_start_trial`), 0.001 1046, 0.002 4 of
+  10, more at most 1 (tone frozen too: 953 at 0.002, at most 1 of 10 above). Before the touch signal (no neuron above
+  g_bar before trial 500) the rule only depresses, which keeps neurons from being recruited (touch gain above g_bar at
   trial 1000 in 21, 6, 1, 0 percent at 0.001 to 0.032); where it potentiates it raises the tone and both textures
-  together. The control started with both textures raised by the same amount (`init_task_mode` `'shift'`, each
-  neuron's w_T1 - w_T2 kept) learns slower or never (x2 1240, 7 of 10; x4 and x8 no seed, licking on every trial;
-  ratio kept: 504, 286, 205): the policy update has no baseline (hit +1, false alarm -0.5), so activity shared by go
-  and no-go trials drives licking. The earlier page's "premise holds" is corrected there. Open for the user: as for
-  the apical-deviation rule.
+  together. The control started with both textures raised by the same amount (`init_task_mode` `'shift'`, each neuron's
+  w_T1 - w_T2 kept) learns slower or never (x2 1240, 7 of 10; x4 and x8 no seed, licking on every trial; ratio kept:
+  504, 286, 205): the policy update has no baseline (hit +1, false alarm -0.5), so activity shared by go and no-go
+  trials drives licking. The earlier page's "premise holds" is corrected there. Open for the user: as for the
+  apical-deviation rule.
 - Apical rule without g_bar, with normalization (user, 2026-10-19; page
-  https://claude.ai/artifact/KcNfjUBvFmBdUUXMH2htJt, details in `sandbox/NOTES.md`): `apdev_bar` `False`, dw = lr x g.
-  Additive fails under every normalization (at rest it pulls each neuron's weights towards the input frequencies).
-  Proportional to the weight with `pre` (exactly silent at gain 1) or `both`: no depression; once the touch signal
-  appears (trial 600 to 900) all texture and tone weight moves onto the neurons with apical weight (textures 1.8-1.9
-  times there, 0 elsewhere, preference kept). `pre`, `lr_bas` 0.003: 1011 against 1122 on seeds 0-39, faster in 40 of
-  40 seeds by 111 trials (10 percent; `both` 104); higher rates add nothing. It cannot move the touch-signal onset
-  (720 against 708), only shorten onset to expert (380 to 300 trials). Comparisons are paired by seed from now on
-  (same initial weights and stimuli). The user's dw = lr x (g - 1) (rest subtracted): additive it is slower than the
-  control in every seed and loses seeds under every normalization (both textures get the same increment, preference
-  0.77 to 0.16-0.42); times the weight with `pre` it is faster in 39 of 40 seeds by 111 trials (the same rule as the
-  no-baseline x w one). Slower additive rates (user, 2026-10-20) only approach the control (`pre` 3e-6, 1e-6, 3e-7:
-  11, 2 and 0 trials slower, never faster); at 1e-4 the recruited neurons' tone, T1 and T2 weights converge
-  (preference 0.77 to 0.16, response go/no-go contrast 0.41 to 0.14, selective neurons 22.5 to 12.9 percent), so
-  selectivity drops but does not vanish. The x w rule keeps the preference but leaves 84 percent of the neurons
-  unresponsive to the textures (control 53). Times the basal drive instead of the weight (user, 2026-10-20;
-  `apdev_mult` `'bas'`): `pre` at most 13 trials faster (0.0001: 7, 32 of 40 seeds; 0.0003: 13, one seed lost),
-  `both` and `l1` slower, every bound fails from 0.003 or 0.01; x_bas has a floor (background and coincident
-  distractors, about 0.05), so the weak texture's update is nearly additive and the preference erodes; the soft
-  bound (which brings the weight back) at 0.001 is 34 trials faster in 39 of 40 seeds with the control's population.
-  Why x_bas fails under `l1` (user, 2026-10-21; instrumented runs, ablations, page v5): every synapse active at a step
-  gets the same increment, so 51 percent goes to coincident distractors and the tone (every trial, cue gain = touch
-  gain late) doubles; the L1 rescaling takes in proportion to the weight, so the preferred and the other texture net
-  +0.046 and +0.053 (gap flat, preference 0.80 to 0.55); never faster at 0.0001 to 0.001, and a fresh control started
-  from its trial-1800 weights never becomes expert (always licks). Textures only: 10 of 10 faster. Times the weight
-  and the basal drive (`apdev_mult` `'wbas'`, dw = lr x w x_bas (g - 1)): the preference sharpens; seeds 0-39 `pre`
-  0.003 964 against 1122 (40 of 40, 157 trials, 14 percent; faster than the x w rule in 37 of 40 by 47), `l1` 0.003
-  994 (39 of 40, 127). (x - x_bar) and x_bas^2 (user, 2026-10-21; `apdev_xbar`, `apdev_bas_power`; page v6, details in
-  `sandbox/NOTES.md`): x_bas^2 alone is at most 27 trials faster (the floor's variance gives the weaker texture as much
-  per unit weight). With x_bar the input expected at that step of the trial ('slot') the tone is never potentiated and
-  the textures push against each other (preference 1.00); seeds 0-39, `l1`: x_bas^2 0.03 902 against 1122 (40 of 40, 20
-  percent), times the weight as well (dw = lr (x - x_bar) w (g - 1) x_bas) 0.1 786 (40 of 40, 30 percent; faster than x
-  w x x_bas in 40 of 40), but no recruited cue neurons are left (`pre` keeps them, 839 to 950 on seeds 0-9, distractors
-  pile up). A time average ('step', x_bas^2) gives 989, the local apical-event average ('apical') 1001 (the tone grows
-  on the cue neurons; with the tone frozen 883 and 951 on seeds 0-9). The user set the trial-locked x_bar aside as not
-  biological and prefers the time average (2026-10-21, details in `sandbox/NOTES.md`, page v7): with it x_bas linear
-  erodes the preference (seeds 0-39 1075, 39 of 40 faster by 47 trials) and a power from about 1.5 is needed (1004 / 989
-  / 982 at p = 1.5 / 2 / 3; the expected drift of ln(w_P / w_O) crosses 0 near p 1.45). The weight does the same job: dw
-  = lr (x - x_bar) w (g - 1) x_bas under `pre` learns in 911 / 864 / 776 / 640 / 507 / 432 trials at 0.01 / 0.03 / 0.1 /
-  0.3 / 1 / 3 (40 of 40 faster at each rate; without x_bar `pre` loses seeds from 0.01 as distractors pile up on the
-  recruited neurons), is exactly silent at gain 1 (no weight change during inhibition, after the lift 641 / 448 at 0.3 /
-  3) and moves the touch-signal onset (630 / 450 / 295 at 0.03 / 0.3 / 3, against 715); costs: distractor build-up at
-  0.01-0.1, 1-2 inputs per recruited neuron from 0.3, 28 to 51 of the 52 cue-selective neurons left; `l1` 986 at 0.01
-  (as x_bas^2). The user chose the squared time-average rule under `l1` as the final version (next bullet).
+  `sandbox/results/scratch_2026-10-16_22/nobar/page/normalized_apical_rule.html` (published page deleted 2026-11-03),
+  details in `sandbox/NOTES.md`): `apdev_bar` `False`, dw = lr x g. Additive fails under every normalization (at rest it
+  pulls each neuron's weights towards the input frequencies). Proportional to the weight with `pre` (exactly silent at
+  gain 1) or `both`: no depression; once the touch signal appears (trial 600 to 900) all texture and tone weight moves
+  onto the neurons with apical weight (textures 1.8-1.9 times there, 0 elsewhere, preference kept). `pre`, `lr_bas`
+  0.003: 1011 against 1122 on seeds 0-39, faster in 40 of 40 seeds by 111 trials (10 percent; `both` 104); higher rates
+  add nothing. It cannot move the touch-signal onset (720 against 708), only shorten onset to expert (380 to 300
+  trials). Comparisons are paired by seed from now on (same initial weights and stimuli). The user's dw = lr x (g - 1)
+  (rest subtracted): additive it is slower than the control in every seed and loses seeds under every normalization
+  (both textures get the same increment, preference 0.77 to 0.16-0.42); times the weight with `pre` it is faster in 39
+  of 40 seeds by 111 trials (the same rule as the no-baseline x w one). Slower additive rates (user, 2026-10-20) only
+  approach the control (`pre` 3e-6, 1e-6, 3e-7: 11, 2 and 0 trials slower, never faster); at 1e-4 the recruited neurons'
+  tone, T1 and T2 weights converge (preference 0.77 to 0.16, response go/no-go contrast 0.41 to 0.14, selective neurons
+  22.5 to 12.9 percent), so selectivity drops but does not vanish. The x w rule keeps the preference but leaves 84
+  percent of the neurons unresponsive to the textures (control 53). Times the basal drive instead of the weight (user,
+  2026-10-20; `apdev_mult` `'bas'`): `pre` at most 13 trials faster (0.0001: 7, 32 of 40 seeds; 0.0003: 13, one seed
+  lost), `both` and `l1` slower, every bound fails from 0.003 or 0.01; x_bas has a floor (background and coincident
+  distractors, about 0.05), so the weak texture's update is nearly additive and the preference erodes; the soft bound
+  (which brings the weight back) at 0.001 is 34 trials faster in 39 of 40 seeds with the control's population. Why x_bas
+  fails under `l1` (user, 2026-10-21; instrumented runs, ablations, page v5): every synapse active at a step gets the
+  same increment, so 51 percent goes to coincident distractors and the tone (every trial, cue gain = touch gain late)
+  doubles; the L1 rescaling takes in proportion to the weight, so the preferred and the other texture net +0.046 and
+  +0.053 (gap flat, preference 0.80 to 0.55); never faster at 0.0001 to 0.001, and a fresh control started from its
+  trial-1800 weights never becomes expert (always licks). Textures only: 10 of 10 faster. Times the weight and the basal
+  drive (`apdev_mult` `'wbas'`, dw = lr x w x_bas (g - 1)): the preference sharpens; seeds 0-39 `pre` 0.003 964 against
+  1122 (40 of 40, 157 trials, 14 percent; faster than the x w rule in 37 of 40 by 47), `l1` 0.003 994 (39 of 40, 127).
+  (x - x_bar) and x_bas^2 (user, 2026-10-21; `apdev_xbar`, `apdev_bas_power`; page v6, details in `sandbox/NOTES.md`):
+  x_bas^2 alone is at most 27 trials faster (the floor's variance gives the weaker texture as much per unit weight).
+  With x_bar the input expected at that step of the trial ('slot') the tone is never potentiated and the textures push
+  against each other (preference 1.00); seeds 0-39, `l1`: x_bas^2 0.03 902 against 1122 (40 of 40, 20 percent), times
+  the weight as well (dw = lr (x - x_bar) w (g - 1) x_bas) 0.1 786 (40 of 40, 30 percent; faster than x w x x_bas in 40
+  of 40), but no recruited cue neurons are left (`pre` keeps them, 839 to 950 on seeds 0-9, distractors pile up). A time
+  average ('step', x_bas^2) gives 989, the local apical-event average ('apical') 1001 (the tone grows on the cue
+  neurons; with the tone frozen 883 and 951 on seeds 0-9). The user set the trial-locked x_bar aside as not biological
+  and prefers the time average (2026-10-21, details in `sandbox/NOTES.md`, page v7): with it x_bas linear erodes the
+  preference (seeds 0-39 1075, 39 of 40 faster by 47 trials) and a power from about 1.5 is needed (1004 / 989 / 982 at p
+  = 1.5 / 2 / 3; the expected drift of ln(w_P / w_O) crosses 0 near p 1.45). The weight does the same job: dw = lr (x -
+  x_bar) w (g - 1) x_bas under `pre` learns in 911 / 864 / 776 / 640 / 507 / 432 trials at 0.01 / 0.03 / 0.1 / 0.3 / 1 /
+  3 (40 of 40 faster at each rate; without x_bar `pre` loses seeds from 0.01 as distractors pile up on the recruited
+  neurons), is exactly silent at gain 1 (no weight change during inhibition, after the lift 641 / 448 at 0.3 / 3) and
+  moves the touch-signal onset (630 / 450 / 295 at 0.03 / 0.3 / 3, against 715); costs: distractor build-up at 0.01-0.1,
+  1-2 inputs per recruited neuron from 0.3, 28 to 51 of the 52 cue-selective neurons left; `l1` 986 at 0.01 (as
+  x_bas^2). The user chose the squared time-average rule under `l1` as the final version (next bullet).
 - Final apical rule (user, 2026-10-21: the squared version with the time average, without `pre`; page
-  https://claude.ai/artifact/4ACjibSDakeKpWts2xh7Py, details in `sandbox/NOTES.md`): dw = lr (x - x_bar) (g - 1)
-  x_bas^2, x_bar each input's running average over all steps of the trial (outcome step included, tau 50 trials),
-  per-neuron `l1`, lr 0.005 (sandbox: `apdev`, `apdev_tau` inf, `apdev_mult` 'bas', `apdev_xbar` 'step',
-  `apdev_bas_power` 2). Seeds 0-39: 988 against 1122 without inhibition (39 of 40 faster, 12 percent), 1009 against 1163
-  after the lift (40 of 40, 13 percent); no weight change during inhibition, with the gain hidden it is exactly the
-  control; acts only at the cue and the touch once the touch signal exists (onset unchanged, 0.5 percent of its change
-  at gain < 1.1); scan on seeds 0-9: every lr from 0.002 to 0.02 faster in 10 of 10, tau 10 to 200 the same, the soft
-  bound and no normalization fail. Recruited neurons: preference 0.79 to 0.98, distractors 1.42 to 0.89, but the tone
-  grows (0.14 to 0.34; tone detectors 2.3 to 9.5 percent, cue-selective by weights 52 to 97); texture detectors 17
-  percent (control 4.4, hebb4 to calcium4 9 to 11); S12d selective neurons in the last 100 trials 19.1 against 22.3
-  percent (not analysed; seeds 0-9: 18.7 against 22.6, of which 16.9 against 3.5 strongly selective, beyond +-5); fresh
-  control from its end weights 236 trials. Figure set `sandbox/results/figures/apical4` (S14 panels with the rule as a
-  fifth condition, since 2026-10-22 drawn by the main code; the draft's rank-sum test on seeds 0-9 calls it n.s.). Fast
-  regime (user, 2026-10-22: optimize it there; page https://claude.ai/artifact/EQMVLQ6ASuPuv9DyTUsYX2, seeds 0-9): no
-  setting works at control3. Every bound (`l1`, `pre`, `both`, `soft`, `clamp`) loses seeds at every rate from 1e-4 by
-  divergence of the TD value estimate, and the stable rates (`l1` 1e-5, 3e-5) change nothing; x_bar's tau 10 / 200 and
-  power 1 / 3 do not help. Mechanism: in no-lick trials the end-of-trial value correction scales the value weights by
-  about 1 - lr_td K_V S (S = sum_t |x_t|^2 + sum_t x_t . z_t); control3 peaks at lr_td K_V S = 1.90 against the
-  overshoot limit 2, and the rule triples S. With a slower fast control it is stable but small: TD 0.0025 no faster,
+  `sandbox/results/scratch_2026-10-16_22/final/page/final_apical_rule.html` (published page deleted 2026-11-03), details
+  in `sandbox/NOTES.md`): dw = lr (x - x_bar) (g - 1) x_bas^2, x_bar each input's running average over all steps of the
+  trial (outcome step included, tau 50 trials), per-neuron `l1`, lr 0.005 (sandbox: `apdev`, `apdev_tau` inf,
+  `apdev_mult` 'bas', `apdev_xbar` 'step', `apdev_bas_power` 2). Seeds 0-39: 988 against 1122 without inhibition (39 of
+  40 faster, 12 percent), 1009 against 1163 after the lift (40 of 40, 13 percent); no weight change during inhibition,
+  with the gain hidden it is exactly the control; acts only at the cue and the touch once the touch signal exists (onset
+  unchanged, 0.5 percent of its change at gain < 1.1); scan on seeds 0-9: every lr from 0.002 to 0.02 faster in 10 of
+  10, tau 10 to 200 the same, the soft bound and no normalization fail. Recruited neurons: preference 0.79 to 0.98,
+  distractors 1.42 to 0.89, but the tone grows (0.14 to 0.34; tone detectors 2.3 to 9.5 percent, cue-selective by
+  weights 52 to 97); texture detectors 17 percent (control 4.4, hebb4 to calcium4 9 to 11); S12d selective neurons in
+  the last 100 trials 19.1 against 22.3 percent (not analysed; seeds 0-9: 18.7 against 22.6, of which 16.9 against 3.5
+  strongly selective, beyond +-5); fresh control from its end weights 236 trials. Figure set
+  `sandbox/results/figures/apical4` (S14 panels with the rule as a fifth condition, since 2026-10-22 drawn by the main
+  code; the draft's rank-sum test on seeds 0-9 calls it n.s.). Fast regime (user, 2026-10-22: optimize it there; page
+  `sandbox/results/scratch_2026-10-16_22/fast/page/apical_rule_fast.html` (published page deleted 2026-11-03), seeds
+  0-9): no setting works at control3. Every bound (`l1`, `pre`, `both`, `soft`, `clamp`) loses seeds at every rate from
+  1e-4 by divergence of the TD value estimate, and the stable rates (`l1` 1e-5, 3e-5) change nothing; x_bar's tau 10 /
+  200 and power 1 / 3 do not help. Mechanism: in no-lick trials the end-of-trial value correction scales the value
+  weights by about 1 - lr_td K_V S (S = sum_t |x_t|^2 + sum_t x_t . z_t); control3 peaks at lr_td K_V S = 1.90 against
+  the overshoot limit 2, and the rule triples S. With a slower fast control it is stable but small: TD 0.0025 no faster,
   0.002 318-322 against 339 (8 of 10 faster), 0.0015 393 against 406; the touch signal appears only 60 to 116 trials
   before the expert trial (control3: onset 170, expert 230). TD 0.002 on seeds 0-39: η 0.01 faster in 35 of 40 seeds
   (median 16 trials) but slower on average (354 against 343: seeds 17 and 33 learn about 680 trials later), η 0.03 loses
   2 seeds; after the lift (seeds 0-9) η 0.01 337 against 359 (10 of 10). Recommendation on the page: leave the rule out
   of the fast figure (redefining the fast control would also mean re-running hebb3, bcm3 and calcium3). Ported on
-  2026-10-22 as `BU_APICAL`, an additional rule (user; see Port). Open for the user: the fast figure without it, and the
-  change of the cue population (the S14 composition and its paired test were settled on 2026-10-23, see the S14 bullets
-  below).
+  2026-10-22 as `BU_APICAL`, an additional rule (user; see Port). Open for the user: the fast figure without it (the S14
+  composition and its paired test were settled on 2026-10-23, see the S14 bullets below; the growth of the tone and of
+  the tone detectors is fine and needs no mention, user, 2026-11-02).
 - Panels of the apical rule (user, 2026-10-22: "first add any panel with the new bottom-up plasticity"; a to h already
   had it as the fifth condition): `fs14i` expert trials paired by seed, control against the rule, both protocols
   (signed-rank: 10 of 10 faster in both, 115 / 113 trials, p 0.002, the floor at 10 seeds; rank-sum in c p 0.23);
@@ -477,8 +531,8 @@ chronological notes of everything tried, including the rules that were set aside
   83, 36, 64 percent of their trial-1800 change by trial 100 and change as much under inhibition; the rule changes
   nothing during inhibition, exactly 0 in every seed). Review page with the twelve panels, legend drafts, a worked
   example and the decisions (which of i to l, the test of c, the group, one figure or two; settled on 2026-10-23, next
-  bullet): https://claude.ai/artifact/5yY1DiSrj24ne9rbojx94h. `helper.py` got `TONE_IDX` and `N_TASK_STIMULI` (panels
-  only).
+  bullet): `sandbox/results/scratch_2026-10-22_23/page/apical_rule_panels.html` (published page deleted 2026-11-03).
+  `helper.py` got `TONE_IDX` and `N_TASK_STIMULI` (panels only).
 - S14 on the apical rule only (user, 2026-10-23: "focus fully on 'apical' ... the others should not appear ... no need
   to delete the code and results yet"): a the schematic (empty), b the performance panel of fig. 4h with the rule
   (`fs14b_performance`; expert trials 985 +- 205 unperturbed, 1042 +- 199 corrected, 2842 +- 199 perturbed; the rule's
@@ -493,16 +547,16 @@ chronological notes of everything tried, including the rules that were set aside
   percent, control 10.9, 11.6, 24.8, 52.7; beyond +-5: 16.9 against 3.5 percent; the axis to 20 percent because the zero
   bin holds 16.9, the legend in the upper right, the histogram as wide as S12's, 1.12 `PANEL_WIDTH`). Fig. 4h, S12c and
   S12c/d were refactored onto the shared helpers and render pixel-identically. Page (version 3 of the S14 page, with b
-  reduced and d's legend): https://claude.ai/artifact/5yY1DiSrj24ne9rbojx94h. The user approved this version
-  (2026-10-23: "i like the current version"); only a, the schematic of the rule, is still to be drawn. Name (user,
-  2026-10-23): the panels call the rule "Plastic $w^\mathrm{bas}$" (`BU_LABELS`; was 'Apical'). Only c names it, on
-  two lines under its ticks (on one line it overlaps "Control"), with the protocol labels 22 pt below the axis
-  (`annotate`, which the layout places exactly; the line spacing of before, axes 82.4 pt high against 87.7, b to f 83
-  to 88.5). e's colorbar reads $w^{bas}_{Go}(t_0)-w^{bas}_{NoGo}(t_0)$ (the bins are the initial weights; for the
-  `BU_*` simulations, S12c unchanged), the rest of e pixel-identical. "Apical inhibition" (4h, S14b) names the protocol
-  and stays; the code names (`BU_APICAL`, 'apical', the result files) are unchanged, and the draft PDFs in
-  `panels/s14_rules_draft/` still say 'Apical'. Version 4 of the S14 page (same URL; the name in its legend drafts, c
-  and e marked as updated, S12c's colorbar as an open point) has its source in
+  reduced and d's legend): `sandbox/results/scratch_2026-10-22_23/page/apical_rule_panels.html` (published page deleted
+  2026-11-03). The user approved this version (2026-10-23: "i like the current version"); only a, the schematic of the
+  rule, is still to be drawn. Name (user, 2026-10-23): the panels call the rule "Plastic $w^\mathrm{bas}$" (`BU_LABELS`;
+  was 'Apical'). Only c names it, on two lines under its ticks (on one line it overlaps "Control"), with the protocol
+  labels 22 pt below the axis (`annotate`, which the layout places exactly; the line spacing of before, axes 82.4 pt
+  high against 87.7, b to f 83 to 88.5). e's colorbar reads $w^{bas}_{Go}(t_0)-w^{bas}_{NoGo}(t_0)$ (the bins are the
+  initial weights; for the `BU_*` simulations, S12c unchanged), the rest of e pixel-identical. "Apical inhibition" (4h,
+  S14b) names the protocol and stays; the code names (`BU_APICAL`, 'apical', the result files) are unchanged, and the
+  draft PDFs in `panels/s14_rules_draft/` still say 'Apical'. Version 4 of the S14 page (same URL; the name in its
+  legend drafts, c and e marked as updated, S12c's colorbar as an open point) has its source in
   `sandbox/results/scratch_2026-10-22_23/page/` (`apical_rule_panels.html` with `img3/` and `img4/`, v3 kept as
   `apical_rule_panels_v3.html`; the render, measurement and page-edit scripts in `rename/`).
 - f4h_w_ap (user, 2026-10-23: "show the average w_ap evolution of the initially texture selective neurons as well as the
@@ -517,65 +571,169 @@ chronological notes of everything tried, including the rules that were set aside
   above the axes, right-aligned with them (`fig.legend` after `adjust_figure`, so the axes keep the size of the other 4h
   panels; the traces leave no room inside and one row is wider than the panel). Open for the user: 46 of the 58
   cue-selective neurons per seed are texture-unresponsive and hold 69 percent of that group's final `w_ap` (0.04 without
-  them). Page with before and after: https://claude.ai/artifact/PAtiGhH85NqU3krF3oqFCR (PNGs of every version in
-  `panels/f4h_options/`, gitignored).
-- Still to review with the user: f4c, f4d, the f4h performance and expert-trial panels, S11b to S11d, S12 and S13.
-- Fast-learning regime (user, 2026-10-23: "figure out how or whether to show the fast parameter optimization
-  simulations ... replot all the control results with the fast parameters ... feel free to add an other supplementary
-  figure"): every panel of figs. 4 and S11 to S13 but S11b/c is redrawn from control3 into `panels/fast/` (same file
-  names), and a draft S15 (placeholder name, `panels/fig_s15*`) compares the regimes: a mean performance, b per-seed
-  expert trials fast against biological in both protocols (a seed has the same initial weights and stimulus sequence in
-  both regimes, checked; proportional fit fast = biological / 4.5, Pearson r 0.92 / 0.88), c and d trials to expert and
-  recruited neurons (final `w_ap` above 0.5) in the two `theta_0` sweeps, e the outcome dendrites in Hit trials over
-  trials, f the reward prediction (V̂ at the outcome step) in the Hit trials of the last 300 trials. New for it: the
-  fast `theta_0` sweep (1 to 2 diverge in every seed, at trials 87 to 613; 2.5 in 2 of 10, the other 8 expert at 213;
-  then 230, 296, 391, 479 and 685 trials from 3 to 5, every seed expert), the divergence stop of the loop
-  (`check_reproduces` 18/18 identical), `x_som_cue` in the fast default run, the f4g / S13 window rule, the Tukey skip
-  and the shading of `fs12b_theta0` (see Architecture); the 27 biological and S14 panels render pixel-identical.
-  Findings: expert after 230 / 267 trials (biological 1100 / 1155); apical inhibition still blocks learning
-  (performance 0.53 at trial 1800; corrected against unperturbed p 0.38, perturbed p 1.6e-4); recruitment is set by
-  `theta_0` (equal in both regimes at equal `theta_0`: 11.7 / 11.3 percent at 3, 3.7 / 4.2 at 4), so the fast regime's
-  11.3 percent (25.2) follows from the `theta_0` 3 its TD rate needs; the initially texture-selective neurons end at
-  `w_ap` 0.56 (0.94), 56 percent of them recruited (94), gains at their stimulus 5.1 to 5.4 (7.5 to 8.6); selective
-  neurons 12.8 to 15.1 percent (12.7 to 22.5); every fast seed learns even at `theta_0` 5 (685 trials with 1.4 percent
-  recruited; biological none); the Hit-trial outcome dendrites stay at 0.67 after learning (0.32) because V̂ at the
-  outcome scatters from trial to trial (sd 0.55 against 0.16, mean |1 - V̂| 0.45 against 0.15, correlation between
-  consecutive Hit trials -0.01 against 0.71; the TD rate sits at 1.9 of the overshoot limit 2, see the fast-regime
-  analysis of the apical rule); sensory dendrites at touch 0.12 to 0.25 (0.17 to 0.47), touch-signal onset 60 trials
-  before expert (385); the Smith learning trial is the expert trial in 9 of 10 fast seeds. Page with the replots side by
-  side, S15 with draft legends, the numbers and the options: https://claude.ai/artifact/17KgLcqMJ6zCfnTHY1VXaZ (source,
-  render and number scripts in `sandbox/results/scratch_2026-10-23_fast/`). Recommended there: one supplementary figure
-  (S15 a to f, possibly with the fast 4h performance panel), the biological regime for every main figure, the replots
-  as review material.
+  them). Page with before and after: `sandbox/results/scratch_2026-10-22_23/wpage/f4h_apical_weights.html` (published
+  page deleted 2026-11-03) (PNGs of every version in `panels/f4h_options/`, gitignored).
+- Review of 2026-11-02 (user: "f4d is good", "fs11 b and d are good", f4h "looks good besides the one very slow control
+  seed"; page `sandbox/results/scratch_2026-11-02_review/page/fig4_review.html` (published page deleted 2026-11-03),
+  source and scripts in `sandbox/results/scratch_2026-11-02_review/`). f4c (user: "more representative of a seed that
+  takes around 1100 trials ... the best would be if seed zero did that"): seed 0 is expert at 1380, the second slowest
+  (mean 1100, median 1005); making seed 0 the typical one would mean another seed set chosen for it, so the panel now
+  plots the seed with the expert trial closest to the mean (seed 5: 1078; fast 226 against 230), alternative on the page
+  seed 8 (1024, closest to the median). f4e (user: dark spots, "find a solution where there would be no such dark
+  spots"): the black rows were 20-trial windows without a CR trial in any seed (trials 420, 700, 740; between trials 200
+  and 900 the agents lick on almost every no-go trial, 0 to 6 CR trials per row pooled), and the soma rasters set their
+  empty rows to 0 (two Miss rows at trials 800 to 900, drawn as silent); now every row is widened to at least 10 trials
+  of its type (CR 39 of 90 rows widened, at most 120 trials; S11e FA 6, at most 70; soma Miss 30 of 36, at most 208; Hit
+  pixel-identical; 20 or 40 blur the onset of the touch signal). Question to the user on the page: in each soma file
+  only one row matches its label (t1's top row, t2's bottom row; the same in 46fb15e), presumably cropped in the
+  manuscript. f4h (the slow seed 9, expert at 1705, ends at 0.80): a 4000-trial control run in scratch (trials 0 to 1799
+  identical to the saved run; the Smith estimate over a longer run moves the expert trials by at most 4 at 2200 trials,
+  11 at 4000; mean 1100 / 1099.5 / 1096.8) gives three options on the page: A keep 1800, B the control run 2200 trials
+  (as many active trials as the inhibition protocol after the lift; recommended; every seed at 0.97 or more by then), C
+  4000. The user asked what the fast regime's window rule is (answered on the page: f4g and S13 show min(500, 50
+  floor(earliest expert trial / 50)) trials before the expert trial, 150 fast, and skip the Tukey test with fewer than
+  two seeds in a phase). Decisions (user, 2026-11-02): B ("go with your initial recommendation of running and plotting
+  for 2200 trials, maybe just watch out that this does not change other panels who might just show results of all the
+  simulated trials"; done, see Data files: of the 45 panels rendered in both regimes only the restructured soma rasters,
+  f4h's performance, S15a and the fast f4h performance changed, f4h_w_ap still stops the control at 1800); the minimum
+  of 10 trials per raster row "sounds good", a definite decision later; the soma rasters by texture (user's layout: one
+  figure per texture, the rows the initially texture 1- and texture 2-selective neurons, the columns lick and no lick;
+  before, each figure was one neuron group with the trial types in the rows, so only one row per figure matched its
+  label, also in 46fb15e). Page version 2 (same URL) shows the done f4h and the soma rasters by texture.
+- Review of 2026-11-03 (user): f4c keeps seed 5; the raster rows of dendrites and somas should look alike (done: both
+  20-trial rows and 'nearest', see Architecture; the apical rasters at the PDFs' 300 dpi were already blocks, the
+  difference was the 50-trial soma rows); f4h_w_ap extends the control lines to 2200 trials (done, `all_trials`).
+  S15b (user: "some of the no gain trials to expert look surprisingly fast compared to the performance traces ...
+  something is fishy"): not a bug, the Smith expert trial is the last trial at which the lower 5 percent bound is below
+  chance, which every condition reaches at an estimated performance of 0.57-0.65; the gained networks then reach 0.8
+  within 17-83 trials (corrected 34-143), the gain-blind ones within 97-288 (232-455), because their curves rise
+  slowly. With trials to an estimated performance of 0.8 instead (prototype on the figure status page): unperturbed
+  biological 1150, fast 250, no gain 828 (slower than fast in 9 of 9, p 0.004; Smith 621, p 0.012), corrected 1234,
+  320, 745 (4 experts). Open for the user: which measure S15b uses (fig. 4h and S14c use Smith's); the rest of S15 the
+  user is "not yet sure" about.
+- Review of 2026-11-03, afternoon (user): 4e, S13, 4h (all three panels), S11 and S12 approved, S14 "good for now";
+  S12b: the lower y-limit of the theta_0 panel at 0 (done in `plot_theta0_w_ap()`, so S15c and the fast replot too;
+  markers at 0 not clipped). S15 (user: "for s15a we could just show the unperturbed cases, so we could maybe show both
+  traces first in panel a; and then just fast and no gain in panel b. we need a way to compare when the no gain did not
+  reach expert at all"): done as described in Architecture (the corrected protocol and the biological regime are out
+  of S15a/b; `fs15a_performance_gain_blind` is gone, its output files deleted). Two ways for the seeds that never
+  become expert, both on the figure status page: A (in the code) the paired plot with the median and the seed censored
+  at 1800 trials in the signed-rank test (no gain slower in 9 of 10 seeds, p 0.006; censoring at the run length is a
+  lower bound, so the test stays conservative); B (prototype,
+  `sandbox/results/scratch_2026-11-02_review/scripts/s15b_fraction.py`) the fraction of agents expert over trials
+  (Kaplan-Meier style; fast 10 of 10 by trial 382, no gain 9 of 10 by 1188; log-rank, statsmodels `survdiff`, p
+  0.003). Open for the user: A or B, the measure (Smith expert trial or trials to 0.8, which the user has not answered),
+  and the rest of S15 (gate power, the parameter search, e's axis titles).
+- Nothing else is left to review in figs. 4 and S11 to S14 (S14a, the schematic, is still to be drawn).
+- Legends of 2026-11-12 (user: the old manuscript legends pasted into the status page, "correct these legends";
+  then "update Table S1 and add one column for each different model", S14 and S15 legends in the same style, "make
+  the panel whiskers match the legend", "4f make it the s.e.m."): the box plots of f4g and S13 have their whiskers at
+  the 5th and 95th percentile (`whis` in `plot_apical_trace_boxplot()`; was matplotlib's 1.5 times the IQR), and
+  f4f draws the mean +- s.e.m. over the seeds of each seed's mean over the group (was the pooled mean +- the s.d. over
+  the pooled neurons and trials of a 50-trial batch divided by sqrt(50); the lines barely move). Then (user: "yes do 2
+  and 3"): every s.e.m. drawn is over the seeds, of each seed's mean (`nan_sem()`: denominator n - 1, n the seeds
+  with data), in f4d and S11d (was the s.d. over the pooled trials of all seeds divided by sqrt(10)), f4f, and f4g
+  and S13 (was the s.d. over the 50 trials of a batch of the seed average divided by sqrt(10), so the bands are wider
+  now); every s.d. drawn has the denominator n - 1 (f4h's bars: 1100 +- 273, 2955 +- 209, 1155 +- 209; S14d; S15d
+  and e, no error bar for a single expert seed). The draft helpers without panels keep `np.std`. Open for the user:
+  the windows of f4d and S11d (naive the first 5 trials: Hit trials in 5 seeds, CR 9, FA 8; expert the last 50: FA
+  trials in 2 seeds only, so S11d's expert FA rests on 2 seeds; the first 20 trials have every type in every seed,
+  and every seed has 19 to 32 FA trials from its expert trial on). Other points listed on the page: S11e has no soma
+  raster, the outcome dendrite rows of 4e and S11e repeat, the box plots' axes reach 2. Panels and code before each
+  change, PNGs before and after: `sandbox/results/scratch_2026-11-12_legends/` (`before/`, `before2/`).
+- Review and experiments of 2026-11-03, evening (user): S12b's theta_0 axis starts at 1 (done, `set_xlim`); S15b keeps
+  option A (option B, the fraction of agents expert, perhaps added later) and the Smith measure; S15b labels "only
+  gain", "only plasticity" and "both" (drawn capitalized). New sandbox models (details and numbers in
+  `sandbox/NOTES.md`, section "Gain plus plasticity ... and plasticity from the policy loss"): (1) "both", the gated
+  Hebbian rule of `BU_GAIN_BLIND` with the gain reaching the policy, optimized from the fast regime: ported as
+  `Simulation.BU_GATED_HEBB` (rule name `gated_hebb`, fast regime only: `l1`, `lr_bas` 0.512, `theta_bas_0` 14,
+  `GATE_POWER`, theta_0 2.5, lr_td 0.002), 10 of 10 expert at 124 (96-160) against 230, faster in 10 of 10 (p 0.002),
+  after the lift 10 of 10 (80-139); `check_reproduces` 22/22 (`gatedhebb3`); a first port at TD 0.003, chosen on seeds
+  0-4, failed on seeds 6 (divergence) and 8 (late relapse, Smith expert 1609) and was replaced after a search on seeds
+  0-9; (2) basal plasticity by the policy gradient (`lr_bas_pg`, sandbox only, no gain, TD or apical activity): best by
+  Smith policy 0.064, lr 100, `l1`: 10 of 10, mean 276 (median 179) but final 0.73 and 0.8 reached in 3 of 10; policy
+  0.128, lr 50: 10 of 10, 304, 0.8 reached in 10 of 10 (397-932), final 0.87. Open for the user: option B, S15a with
+  the "both" traces, the gate power, the parameter search, e's axis titles.
+- Review of 2026-11-04 (user): S15 reuses fig. S14c's colors, grey (`BU_COLORS[DEFAULT]`) for only gain and the apical
+  rule's green (`COL_APICAL`, `COL_GATED_HEBB`) for both, with purple (`COL_GAIN_BLIND` = `COL_CALCIUM`, `#4a3aa7`) for
+  only plasticity: checked with the dataviz skill's validator (`validate_palette.py`, OKLab Delta E under normal,
+  deutan, protan and tritan vision), purple is 18.8 or more from grey and 26.6 or more from green in every case, 8.6:1
+  on white (orange `#eb6834`: 9.2 from green for deutans, blue `#2a78d6`: 9.6 for tritans); the grey-green pair itself
+  is 7.7 for deutans, within the 6-8 band that the labels of both panels allow. `fs15a` draws the both traces too (three
+  conditions, legend in one row above the axes). "Only plasticity" and "both" were already in the main code
+  (`BU_GAIN_BLIND`, `BU_GATED_HEBB`, run by `python main.py simulate`). The figure status page writes the S14 rule as dw
+  = eta (x_pre - x_bar_pre) (g - 1) x_bas^2 and says why x_bas is squared (the `l1` normalization takes from every
+  synapse in proportion to its weight, so only an update that grows faster than linearly with the drive, a power above
+  about 1.5, gives the preferred texture a larger gain relative to its weight and sharpens the preference). S15b (user,
+  same day): the order only plasticity, only gain, both, and every pair tested (`pairs` ((0, 1), (1, 2), (0, 2)); each
+  bracket on the lowest level where it overlaps no other, so the two neighbouring ones side by side and the outer one
+  above; S14c pixel-identical): signed-rank p 0.006, 0.002 and 0.002. Then (user): S15a's legend in the same order (and
+  the traces drawn in it), and S14b's unperturbed traces in the rule's green of S14c (`plot_inhibition_performance()`
+  takes `color`, default grey, so f4h is pixel-identical); that green and the inhibition protocol's `COL_RESTORED` are
+  OKLab Delta E 10.4 apart under normal vision (7.6 tritan), below the dataviz floor of 15, but the two protocols rise
+  at different times and the bars below the axes name them. S15c (user, same day): the colorbars of fig. S12b's traces
+  (the bins of initial basal weight, distractor color to the go or no-go color, 0 to 0.35), horizontal above each axes
+  (`plot_theta0_w_ap(colorbars=True)`, only S15c; the axes lowered by `THETA0_COLORBAR_ROOM`, each bar, 0.04 of the axes
+  high, as long as the x axis line from theta_0 1 to 5 (inset in data x coordinates), its end labels aligned inwards so
+  the two bars' labels stay apart, the label in the row of the end ticks; user: "less thick and longer ... the same
+  length as the x axes"); S12b's theta_0 panel pixel-identical in both regimes.
+- Fast-learning regime (user, 2026-10-23: "figure out how or whether to show the fast parameter optimization simulations
+  ... replot all the control results with the fast parameters ... feel free to add an other supplementary figure"):
+  every panel of figs. 4 and S11 to S13 but S11b/c is redrawn from control3 into `panels/fast/` (same file names), and a
+  draft S15 (placeholder name, `panels/fig_s15*`) compares the regimes: a mean performance, b per-seed expert trials
+  fast against biological in both protocols (a seed has the same initial weights and stimulus sequence in both regimes,
+  checked; proportional fit fast = biological / 4.5, Pearson r 0.92 / 0.88), c and d trials to expert and recruited
+  neurons (final `w_ap` above 0.5) in the two `theta_0` sweeps, e the outcome dendrites in Hit trials over trials, f the
+  reward prediction (V̂ at the outcome step) in the Hit trials of the last 300 trials. New for it: the fast `theta_0`
+  sweep (1 to 2 diverge in every seed, at trials 87 to 613; 2.5 in 2 of 10, the other 8 expert at 213; then 230, 296,
+  391, 479 and 685 trials from 3 to 5, every seed expert), the divergence stop of the loop (`check_reproduces` 18/18
+  identical), `x_som_cue` in the fast default run, the f4g / S13 window rule, the Tukey skip and the shading of
+  `fs12b_theta0` (see Architecture); the 27 biological and S14 panels render pixel-identical. Findings: expert after 230
+  / 267 trials (biological 1100 / 1155); apical inhibition still blocks learning (performance 0.53 at trial 1800;
+  corrected against unperturbed p 0.38, perturbed p 1.6e-4); recruitment is set by `theta_0` (equal in both regimes at
+  equal `theta_0`: 11.7 / 11.3 percent at 3, 3.7 / 4.2 at 4), so the fast regime's 11.3 percent (25.2) follows from the
+  `theta_0` 3 its TD rate needs; the initially texture-selective neurons end at `w_ap` 0.56 (0.94), 56 percent of them
+  recruited (94), gains at their stimulus 5.1 to 5.4 (7.5 to 8.6); selective neurons 12.8 to 15.1 percent (12.7 to
+  22.5); every fast seed learns even at `theta_0` 5 (685 trials with 1.4 percent recruited; biological none); the
+  Hit-trial outcome dendrites stay at 0.67 after learning (0.32) because V̂ at the outcome scatters from trial to trial
+  (sd 0.55 against 0.16, mean |1 - V̂| 0.45 against 0.15, correlation between consecutive Hit trials -0.01 against 0.71;
+  the TD rate sits at 1.9 of the overshoot limit 2, see the fast-regime analysis of the apical rule); sensory dendrites
+  at touch 0.12 to 0.25 (0.17 to 0.47), touch-signal onset 60 trials before expert (385); the Smith learning trial is
+  the expert trial in 9 of 10 fast seeds. Page with the replots side by side, S15 with draft legends, the numbers and
+  the options: `sandbox/results/scratch_2026-10-24_s15/page/fast_regime.html` (published page deleted 2026-11-03)
+  (source, render and number scripts in `sandbox/results/scratch_2026-10-23_fast/`). Recommended there: one
+  supplementary figure (S15 a to f, possibly with the fast 4h performance panel), the biological regime for every main
+  figure, the replots as review material.
 - S15 in the user's layout (2026-10-24: "a with the same as fig4h performance traces ... b like fig_s14c but with the
   fast parameters ... c something like the current panel b ... d, e, f ... showing that the parameters are at the edge
-  of divergence ... fig 12c_theta_0 [the fast S12b theta_0 panel] together with the current panel c as d and e ... f
-  the expert times depending on the other fitted parameters like the learning rates"): a fig. 4h's performance panel in
-  the fast regime (with inhibition: performance 0.53 at trial 1800, expert 267 +- 85 trials after the lift); b fig.
-  S14c's paired expert trials, biological against fast (10 of 10 seeds faster in both protocols, by 870 and 888 trials,
+  of divergence ... fig 12c_theta_0 [the fast S12b theta_0 panel] together with the current panel c as d and e ... f the
+  expert times depending on the other fitted parameters like the learning rates"): a fig. 4h's performance panel in the
+  fast regime (with inhibition: performance 0.53 at trial 1800, expert 267 +- 85 trials after the lift); b fig. S14c's
+  paired expert trials, biological against fast (10 of 10 seeds faster in both protocols, by 870 and 888 trials,
   signed-rank p 0.002); c the former b (`fs15c_speedup`); d fig. S12b's `theta_0` panel in the fast regime (at equal
   `theta_0` the fast bin curves follow the biological ones: top go bin 0.72 against 0.82 at 3, 0.35 against 0.37 at 4);
-  e the former c; f new learning-rate sweeps of the fast regime (`results/fast/lr_*/`, 54 runs, 47 min; each rate
-  alone, 1/8 to 8 times, `theta_0` and the others at their fast values; four axes in a row, two panels wide). Dropped: the
+  e the former c; f new learning-rate sweeps of the fast regime (`results/fast/lr_*/`, 54 runs, 47 min; each rate alone,
+  1/8 to 8 times, `theta_0` and the others at their fast values; four axes in a row, two panels wide). Dropped: the
   former d (recruited neurons), e (Hit outcome dendrites) and f (reward prediction); their code is in
-  `sandbox/results/scratch_2026-10-24_s15/before/panels.py` and their PDFs in `old_s15_files/` there. New in d, e, f
-  and the fast S12b replot: a lighter band where some seeds diverge (`COL_PARTLY_DIVERGED` 0.955; the full band is now
-  0.9, was 0.92). Sweep results (trials to expert, mean +- sd over expert seeds; seeds 0-9): TD 1047 +- 185 at 1/8 (the
+  `sandbox/results/scratch_2026-10-24_s15/before/panels.py` and their PDFs in `old_s15_files/` there. New in d, e, f and
+  the fast S12b replot: a lighter band where some seeds diverge (`COL_PARTLY_DIVERGED` 0.955; the full band is now 0.9,
+  was 0.92). Sweep results (trials to expert, mean +- sd over expert seeds; seeds 0-9): TD 1047 +- 185 at 1/8 (the
   biological TD rate; 9 expert, seed 9 locks into licking on every trial; biological regime 1100), 817, 614, 466, 368,
-  279, 248 at 0.84, 230 at 1; 1.19 223 (1 diverged, trial 293), 1.41 250 (4 diverged, trials 228 to 1462), 2 to 4 and
-  8 every seed diverges, 5.66 one seed expert at 791 (9 diverged). So the TD rate alone accounts for nearly the whole
+  279, 248 at 0.84, 230 at 1; 1.19 223 (1 diverged, trial 293), 1.41 250 (4 diverged, trials 228 to 1462), 2 to 4 and 8
+  every seed diverges, 5.66 one seed expert at 791 (9 diverged). So the TD rate alone accounts for nearly the whole
   speed difference between the regimes, and it is at the divergence edge (as `theta_0` is from below: 2.5 loses 2 of
-  10). Policy: 307 at 1/8, 275 at 1/4 (the biological rate), 230 from 0.84 to 1.19, 292 at 2; from 2.83 some seeds
-  never become expert, locked into licking on every trial or on none (1, 1, 3 and 10 of 10 at 2.83, 4, 5.66 and 8), no
+  10). Policy: 307 at 1/8, 275 at 1/4 (the biological rate), 230 from 0.84 to 1.19, 292 at 2; from 2.83 some seeds never
+  become expert, locked into licking on every trial or on none (1, 1, 3 and 10 of 10 at 2.83, 4, 5.66 and 8), no
   divergence. Apical weights: 230 to 236 from 0.5 to 2; below 0.5 1 or 2 seeds diverge (1 at 0.35 and 0.25, 2 at 0.18
-  and 1/8; recruited 19.7 percent at 1/8 against 11.3), above 2 slower and fewer recruited (378 trials and 4.6 percent at
-  8); the biological value (0.22) is in the diverging range of the fast regime. Apical input (`lr_trace`): 222 to 241
+  and 1/8; recruited 19.7 percent at 1/8 against 11.3), above 2 slower and fewer recruited (378 trials and 4.6 percent
+  at 8); the biological value (0.22) is in the diverging range of the fast regime. Apical input (`lr_trace`): 222 to 241
   from 0.5 to 3.9 (its maximum, 1.0), up to 302 when slower. Recruitment hardly moves with the TD (8.4 to 11.8 percent)
   and policy rates (10.1 to 11.3). Verified: `check_reproduces` 18/18 identical after the `lr` option; the 27 biological
   and S14 panels pixel-identical; 20 of 21 fast replots identical (S12b `theta_0` has the new band); the value of the
   regime in f is read from `results/fast/theta_0/t_3.0.pickle`, identical to the fast default run in every trial
   outcome, expert trial and final `w_ap`. Page version 2 (same URL as version 1, its source in
-  `sandbox/results/scratch_2026-10-24_s15/page/`): https://claude.ai/artifact/17KgLcqMJ6zCfnTHY1VXaZ.
+  `sandbox/results/scratch_2026-10-24_s15/page/`): `sandbox/results/scratch_2026-10-24_s15/page/fast_regime.html`
+  (published page deleted 2026-11-03).
 - S15 version 3 (user, 2026-10-24: "drop panel c. shift d to c and e to d. f becomes e and should be exactly two panels
   wide. in the theta_0 w_ap panel, please add a vertical line marking the chosen theta. in
   fig_s15e_theta_0_expert_trials you can drop the biological data. in this panel and the last one please make the picked
@@ -598,10 +756,47 @@ chronological notes of everything tried, including the rules that were set aside
   plot` runs (6 min, again after the S12b line). Version 2's c to f are in
   `sandbox/results/scratch_2026-10-24_s15/v3/old_v2_files/`, its code in `v3/before/`. Page version 4 (same URL; the
   assembled figure at its true size, the five panels with legend drafts, the S12b replots with the line):
-  https://claude.ai/artifact/17KgLcqMJ6zCfnTHY1VXaZ. User after page version 4 (2026-10-24): "everything looks pretty
-  good for now". Decided (user, 2026-10-24): the TD-rate finding stays out of the text. Open for the user: the axis
-  titles of e ("TD", "Policy", "Apical weights", "Apical input"; the manuscript's symbols if the methods define them;
-  user: "TBD later"); still from version 1, the f4g / S13 window rule and keeping the fast `BU_*` rules out.
+  `sandbox/results/scratch_2026-10-24_s15/page/fast_regime.html` (published page deleted 2026-11-03). User after page
+  version 4 (2026-10-24): "everything looks pretty good for now". Decided (user, 2026-10-24): the TD-rate finding stays
+  out of the text. Open for the user: the axis titles of e ("TD", "Policy", "Apical weights", "Apical input"; the
+  manuscript's symbols if the methods define them; user: "TBD later"); still from version 1, the f4g / S13 window rule
+  and keeping the fast `BU_*` rules out.
+- Gain-blind policy experiments for S15 (user, 2026-11-02: show that the apical amplification, more than the bottom-up
+  plasticity, carries the behavioural learning; "bottom-up plasticity dictated by the unsigned td apical signal alone
+  without multiplicative gain modulation"; (1) remove the gain from what the policy receives and optimize all parameters
+  against apical inhibition, (2) replay the control's own apical activity per neuron into the basal rule of a gain-blind
+  run of the same seed and optimize the rule; sandbox only, details and numbers in `sandbox/NOTES.md`, section
+  "Gain-blind policy"). New sandbox knobs `policy_sees_gain`, `record_apical`, `apical_replay` and `apical_replay_shift`
+  (defaults = main code, `check_reproduces` 18/18), scripts `scan_gainless`, `tab_gainless`, `check_gainless` (the
+  gain-blind policy without plasticity equals the main code's APICAL_INHIBITION trial for trial; a replay of a run's own
+  recording reproduces it), `plot_gainless`, `plot_gainless_rates`; results and recordings (control4 4000 trials 2.7 GB,
+  control3 1800 trials 1.3 GB) in `sandbox/results/gainless/`. Findings (seeds 0-4): the gain-blind policy locks into
+  licking within about 100 trials, so without plasticity it never learns (at most 1 of 5 at any policy rate); the apical
+  mapping still develops (touch signal 130-155 trials later than in the control); apical-triggered rules (the final
+  apical rule, w x_bas under `pre`, gated Hebb) restore learning only with a policy 16 to 128 times faster than
+  control4's (best: gated Hebb at gate power 0.25, 4 of 5 seeds, experts 180-640 trials), never at control4's rate,
+  where the gain gives 10 of 10; the gained network at control3's rates learns in 5 of 5 at about 220 trials; the live
+  signal works as well as the replayed one, and so does another seed's recording (the benefit is time-locked Hebbian
+  clean-up, not apical targeting). Summary figure: `sandbox/results/gainless/fig/rates_seeds0-4.png`; page
+  `sandbox/results/gainless/page/gainless.html` (published page deleted 2026-11-03) (source in
+  `sandbox/results/gainless/page/`). Ported (user, 2026-11-02: "for the final version, i only want to add the
+  optimization ... where there is no gain but there is bottom-up plasticity based on the live apical signal. just take
+  over the best parameters and run the full simulations. then you can add these results into figure fs15 a and b. i am
+  not sure yet how to handle the whole parameter business"): `Simulation.BU_GAIN_BLIND` (rule name `gain_blind`,
+  biological regime only): the policy reads the basal drive and learns with the outcome activity at gain 1
+  (`policy_sees_gain` False in `RULE_HYPERPARAMETERS`, which also sets `lr_policy` 0.256), and the basal weights learn
+  by x_in a^`GATE_POWER` (x_bas - theta_bas), a the apical activation rescaled to [0, 1], theta_bas as hebb's with
+  `theta_bas_0` 14, `lr_bas` 0.512, `l1` (the sandbox's gated Hebb with `gh_post` bas). `GATE_POWER` 0.25: on seeds 0-9
+  0.125 was tied (9 of 10 expert both; mean with the failed seed at 1800 658 against 739, faster in 6 of 10, signed rank
+  n.s.), and 0.25 is the setting of every sandbox control and the stronger apical gate. `check_reproduces` 20/20
+  identical (`gainblind4` added, `sandbox/results/figures/gainblind4/hp.json`). Results: unperturbed 9 of 10 expert,
+  identical to the sandbox seed by seed (580, 225, 189, 437, 601, 1106, 1057, 210, 1188; seed 0 locked in, 0.56 at trial
+  2200); with inhibition no plasticity while inhibited (no apical activity), the policy alone; seed 2 expert at trial
+  1032 during the inhibition, after the lift 3 more (562, 694, 979), 6 of 10 locked in (biological and fast control 10
+  of 10). S15b: fast against no gain unperturbed p 0.012 (230 against 621 over the 9 experts), corrected n.s. (4
+  experts). Of the panels sharing the functions (f4h both regimes, S14b, S14c, f4h_w_ap) all render pixel-identical.
+  Open for the user: S15's layout (a now two panels, 'Fast' and 'No gain'), the gate power, and how to present the
+  parameter search ("not sure yet").
 
 ### Model state (decided in the sandbox)
 
@@ -663,27 +858,29 @@ chronological notes of everything tried, including the rules that were set aside
   `numbers_f.py` with `numbers_f.json`, `numbers_d.py`, `proto_f.py`), the code before the change (`before/`, with the
   dropped S15 panels) and the first draft's S15 PDFs (`old_s15_files/`): `sandbox/results/scratch_2026-10-24_s15/`,
   with version 3 in `v3/` (the code before it, version 2's PDFs and SVGs of c to f, the cross prototypes, the
-  measurement and assembly scripts, `edit_panels.py`) and the S12b line in `v3/s12b_line/`.
+  measurement and assembly scripts, `edit_panels.py`) and the S12b line in `v3/s12b_line/`. The review of 2026-11-02
+  (f4c, f4e, f4h): `sandbox/results/scratch_2026-11-02_review/` (`page/` with `img/`, `scripts/` with the 4000-trial
+  control run `sim_long.py` and its outcomes and Smith traces `default_4000.pickle`, and the prototypes).
 
 ### Next
 
 1. Finalize the figures (user, 2026-10-16): continue the panel review with the user (f4g, f4e, f4f, S11e and f4h_w_ap
-   done; still to review f4c, f4d, the f4h performance and expert-trial panels, S11b to S11d, S12 and S13; see Figure
-   review). S14, the bottom-up plasticity figure of the biological regime, shows the apical rule alone (`BU_APICAL`,
-   ported 2026-10-22, see the final-rule bullet) and was approved by the user on 2026-10-23 (b to f; a, the schematic of
-   the rule, is still to be drawn; see Figure review). hebb, bcm and calcium have no panels since then (their
-   `plot_bu_*` helpers, the five-condition PDFs in `panels/s14_rules_draft/` and their results are kept), so their open
-   decisions (`ca_beta`, see the equations bullet; the re-tuned gated rules of 2026-10-18; the framing after the
-   2026-10-19 ablation, the rules' speed-up does not need the apical gain) matter only for a fast-regime rules figure or
-   if they return. The fast regime (2026-10-23): the control panels are replotted in `panels/fast/`, and S15 shows the
-   fast regime in the user's layout of 2026-10-24 (version 3: a to e, e the new learning-rate sweeps; see the
-   fast-regime bullets of Figure review); the user finds version 3 "pretty good for now" (2026-10-24, page version 4;
-   open: the axis titles of e, "TBD later"). A fast-regime rules figure (hebb3, bcm3, calcium3) is not drawn and not
-   recommended: it would come from the `plot_bu_*` helpers with `fast=True` (its panel c needs `x_max` 500 and e a
-   smaller range; calcium3 is not faster than the control without inhibition, 213 against 230, p 0.29, and ends the
-   inhibition protocol with fewer texture detectors than it started with, 4.5 to 3.3 percent, the loss coming after the
-   lift), and the apical rule has no fast-regime setting (2026-10-22; a slower fast control, TD 0.002, would mean
-   re-running hebb3, bcm3 and calcium3).
+   done, f4d, S11b and S11d approved on 2026-11-02, f4c, f4e, f4h, S11, S12, S13 approved on 2026-11-03 and S14 for now;
+   open: S15b's form and measure and the rest of S15; see Figure review). S14, the bottom-up plasticity figure of the
+   biological regime, shows the apical rule alone (`BU_APICAL`, ported 2026-10-22, see the final-rule bullet) and was
+   approved by the user on 2026-10-23 (b to f; a, the schematic of the rule, is still to be drawn; see Figure review).
+   hebb, bcm and calcium have no panels since then (their `plot_bu_*` helpers, the five-condition PDFs in
+   `panels/s14_rules_draft/` and their results are kept), so their open decisions (`ca_beta`, see the equations bullet;
+   the re-tuned gated rules of 2026-10-18; the framing after the 2026-10-19 ablation, the rules' speed-up does not need
+   the apical gain) matter only for a fast-regime rules figure or if they return. The fast regime (2026-10-23): the
+   control panels are replotted in `panels/fast/`, and S15 shows the fast regime in the user's layout of 2026-10-24
+   (version 3: a to e, e the new learning-rate sweeps; see the fast-regime bullets of Figure review); the user finds
+   version 3 "pretty good for now" (2026-10-24, page version 4; open: the axis titles of e, "TBD later"). A fast-regime
+   rules figure (hebb3, bcm3, calcium3) is not drawn and not recommended: it would come from the `plot_bu_*` helpers
+   with `fast=True` (its panel c needs `x_max` 500 and e a smaller range; calcium3 is not faster than the control
+   without inhibition, 213 against 230, p 0.29, and ends the inhibition protocol with fewer texture detectors than it
+   started with, 4.5 to 3.3 percent, the loss coming after the lift), and the apical rule has no fast-regime setting
+   (2026-10-22; a slower fast control, TD 0.002, would mean re-running hebb3, bcm3 and calcium3).
 2. Normalization (user, 2026-10-14): investigate how normalization shapes the bottom-up plasticity. Current use: the
    init normalizes each neuron's lognormal weights to a total of 1.89 and clips at 1 (17 percent of the neurons
    clipped, mean total 1.84); during plasticity only calcium renormalizes (`pre` in calcium4, `l1` in calcium3, at
@@ -719,7 +916,8 @@ chronological notes of everything tried, including the rules that were set aside
 5. Proposed cleanups awaiting the user (2026-10-16): move the port history above (verification, expert-trial table,
    `theta_0` scan) to `sandbox/NOTES.md` and keep a short summary here; remove `time_to_time_step()` and
    `time_step_to_time()` of `helper.py` (unused, added by the user in 46fb15e); delete `panels/f4g_options/` and
-   `panels/theta0_options/` (gitignored option renders; the decision pages keep their own copies).
+   `panels/theta0_options/` (gitignored option renders; since the decision pages were deleted on 2026-11-03 these are
+   the only copies of their option renders, so keep them unless the user says otherwise).
 6. Manuscript text (outside the code): the default model is now the mixed one (1000 neurons, lognormal init, separate
    learning rates, `theta_0` 2.35), S12 shows it (fs12a equals f4c), the `theta_0` points 4 to 5 of S12b are not
    converged, and the calcium settings never give a net positive update of an active synapse.

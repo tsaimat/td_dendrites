@@ -101,7 +101,8 @@ def get_params(simulation: Simulation, fast: bool = False, inhibition: bool = Fa
         hp[lr[0]] = lr[1]
     n_task_stim = 3  # Number of task-relevant stimuli
     n_noise_stim = N_NOISE  # Number of distractor stimuli
-    n_trials = get_n_trials(simulation=simulation, inhibition=inhibition)
+    n_trials = get_n_trials(simulation=simulation, inhibition=inhibition,
+                            sweep=theta_0 is not None or lr is not None)
 
     # Basal weights, plasticity thresholds (theta) and the Bernoulli distributions of the distractor stimuli
     n_stim = n_task_stim + n_noise_stim
@@ -134,7 +135,8 @@ def basal_rule(simulation: Simulation, x_in: torch.Tensor, x_bas: torch.Tensor, 
     """
     Weight update of the basal synapses by the bottom-up plasticity rule of a simulation, before bounding. The first
     three rules have no explicit apical factor: the apical signal enters through the gain in the somatic activity
-    x_som, so they also act at gain 1 (during apical inhibition). BU_APICAL is gated by the gain and silent at gain 1.
+    x_som, so they also act at gain 1 (during apical inhibition). BU_APICAL, BU_GAIN_BLIND and BU_GATED_HEBB are gated
+    by the apical activity and silent at gain 1.
     - BU_HEBB: x_in (x_som - theta_bas), with the basal threshold theta_bas = theta_bas_0 times the expected basal drive
       per time step (plus background)
     - BU_BCM (Bienenstock, Cooper & Munro, 1982): x_in x_som (x_som - theta_m), with a sliding threshold theta_m that
@@ -145,6 +147,10 @@ def basal_rule(simulation: Simulation, x_in: torch.Tensor, x_bas: torch.Tensor, 
       ca_gamma_d >= 1 the net update of an active synapse is never positive (less depression above theta_p than in
       the depression window), so synapses only grow relative to others through the renormalization of the 'pre'
       or 'l1' bound
+    - BU_GAIN_BLIND: x_in a^gate_power (x_bas - theta_bas), the thresholded Hebbian term of the basal drive (before the
+      gain) gated by the apical activation a rescaled to [0, 1] (0 at rest, so silent at gain 1); theta_bas as for
+      BU_HEBB. The simulation's policy does not see the gain (see simulate_seed); BU_GATED_HEBB is the same rule with
+      the gain
     - BU_APICAL: (x_in - x_bar) (gain - 1) x_bas^2, with x_bar the running average of each input over all time steps
       (outcome step included, time constant xbar_tau trials, starting at 0 and taken before its update). Silent at
       gain 1; above it, the synapses of the inputs active at that step are potentiated and those of the absent inputs
@@ -175,6 +181,9 @@ def basal_rule(simulation: Simulation, x_in: torch.Tensor, x_bas: torch.Tensor, 
         smooth = CA_SMOOTH * theta_p
         post = (torch.sigmoid((calcium - theta_p) / smooth)
                 - hp['ca_gamma_d'] * torch.sigmoid((calcium - hp['ca_ltd_frac'] * theta_p) / smooth))
+    elif simulation in (Simulation.BU_GAIN_BLIND, Simulation.BU_GATED_HEBB):
+        apical = torch.clamp((x_ap - 1. / MAX_GAIN) / (1 - 1. / MAX_GAIN), 0, 1)  # 0 at rest, 1 at maximal gain
+        post = apical.pow(hp['gate_power']) * (x_bas - rule_state['theta_bas'])
     elif simulation == Simulation.BU_APICAL:
         pre = x_in - rule_state['x_bar']
         rule_state['x_bar'] += (x_in - rule_state['x_bar']) / (hp['xbar_tau'] * N_TIME_STEPS)
@@ -233,6 +242,9 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
     )
     n_z = N_Z
     tlr, learning_rate, lr_ap, plr = hp['lr_trace'], hp['lr_td'], hp['lr_ap'], hp['lr_policy']  # Learning rates
+    # The policy reads the somatic activity, or for BU_GAIN_BLIND the basal drive without the apical gain (and learns
+    # with the outcome-time activity at gain 1), so that the apical activity reaches it only through the basal weights
+    policy_sees_gain = hp.get('policy_sees_gain', True)
 
     # Bottom-up plasticity: per-neuron thresholds of the rule, set from the initial basal weights and the probability of
     # each stimulus per time step, and the initial weight totals kept by the bounds
@@ -240,7 +252,7 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
     w_bas_init = w_bas.clone()
     stim_probs = torch.tensor([1, 0.5, 0.5] + noise_ps) / N_TIME_STEPS
     rule_state = {}
-    if simulation == Simulation.BU_HEBB:
+    if simulation in (Simulation.BU_HEBB, Simulation.BU_GAIN_BLIND, Simulation.BU_GATED_HEBB):
         rule_state['theta_bas'] = (hp['theta_bas_0'] * torch.matmul(stim_probs, w_bas) + BKG).float()
     elif simulation == Simulation.BU_BCM:
         # The sliding threshold starts at theta; at the initial weights and gain 1 it relaxes to theta / bcm_e0_scale
@@ -325,7 +337,7 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
             x_ap = apical_transfer(w_ap * x_pre_t[t])  # Apical activations
             gains = gain(x_ap)  # Multiplicative apical gains
             x_som = gains * x_bas  # Somatic activations (also firing rate)
-            actor.integrate_input(x_som)
+            actor.integrate_input(x_som if policy_sees_gain else x_bas)
             dv_hat_now = torch.dot(dw_weights, x_som)  # Estimate state value change
 
             # Update state value estimator, sensory dendrite afferent, sensory dendrite and basal synaptic weights
@@ -392,7 +404,7 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
                             x_ap=x_ap.expand(n_z), hp=hp, rule_state=rule_state)
             w_bas = bound_basal_weights(w_bas=w_bas, dw=dw, bound=hp['bound'], row_sums=row_sums, col_sums=col_sums)
         dw_weights += learning_rate * (reward - r_pred) * z * (x_som - BKG)
-        actor.update(reward=reward.item(), x_som=x_som)
+        actor.update(reward=reward.item(), x_som=x_som if policy_sees_gain else x_bas_background)
 
         # Record variables of interest for post-simulation analysis
         v_hat_h[j, outcome_t+1] = v_hat_h[j, outcome_t] - r_pred
@@ -437,18 +449,35 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
     return result
 
 
-def get_performance(correct_trials: np.ndarray) -> dict:
+def get_performance(correct_trials: np.ndarray, n_estimated: int = None) -> dict:
     """
     Extract the performance trace and the learning and expert trials of one seed with the method of Smith et al. (2004)
     :param correct_trials: Array encoding for each trial whether the correct action was taken (nan for the trials after
     a divergence of the simulation, which count as errors)
-    :return: Dictionary of the performance trace (one entry more than the number of trials) and the learning and expert
-    trials (counted from 0, nan if not reached)
+    :param n_estimated: Number of first trials over which they are estimated (None: all); a longer run (the default
+    simulation without inhibition, of which the panels show the first N_TRIALS) also gets the trace estimated over all
+    of its trials (K_PERFORMANCE_ALL, shown in fig. 4h)
+    :return: Dictionary of the performance trace (one entry more than the number of trials estimated) and the learning
+    and expert trials (counted from 0, nan if not reached)
     """
-    t_learn, t_expert, performance, _ = smith_analysis(np.nan_to_num(correct_trials, nan=0.))
-    return {K_PERFORMANCE: performance,
-            K_LEARNING_T: int(t_learn) - 1 if np.isfinite(t_learn) else np.nan,
-            K_EXPERT_T: int(t_expert) - 1 if np.isfinite(t_expert) else np.nan}
+    correct_trials = np.nan_to_num(correct_trials, nan=0.)
+    t_learn, t_expert, performance, _ = smith_analysis(correct_trials[:n_estimated])
+    estimates = {K_PERFORMANCE: performance,
+                 K_LEARNING_T: int(t_learn) - 1 if np.isfinite(t_learn) else np.nan,
+                 K_EXPERT_T: int(t_expert) - 1 if np.isfinite(t_expert) else np.nan}
+    if n_estimated is not None and len(correct_trials) > n_estimated:
+        estimates[K_PERFORMANCE_ALL] = smith_analysis(correct_trials)[2]
+    return estimates
+
+
+def get_n_estimated(simulation: Simulation, inhibition: bool = False) -> int:
+    """
+    Number of first trials of a simulation over which its performance is estimated (see get_performance)
+    :param simulation: Simulation identifier
+    :param inhibition: Whether the apical dendrites are inhibited (only for the bottom-up plasticity simulations)
+    :return: Number of trials (None: all of them, in the apical inhibition protocol)
+    """
+    return None if is_inhibited(simulation=simulation, inhibition=inhibition) else N_TRIALS
 
 
 def simulate_and_analyse_seed(args: tuple) -> dict:
@@ -462,7 +491,7 @@ def simulate_and_analyse_seed(args: tuple) -> dict:
     simulation, seed, fast, inhibition, theta_0, lr = args
     torch.set_num_threads(1)
     result = simulate_seed(simulation=simulation, seed=seed, fast=fast, inhibition=inhibition, theta_0=theta_0, lr=lr)
-    result.update(get_performance(result[K_CORRECT_TRIALS]))
+    result.update(get_performance(result[K_CORRECT_TRIALS], n_estimated=get_n_estimated(simulation, inhibition)))
     return result
 
 
@@ -513,17 +542,18 @@ def extract_performances(n_workers: int = None) -> None:
     Extract the performance traces and the learning and expert trials of all saved simulation results again
     :param n_workers: Number of parallel processes (None: one per CPU)
     """
-    paths = [get_path(simulation=simulation, fast=fast, inhibition=inhibition)
-             for simulation, fast, inhibition in get_runs()]
-    paths += [get_path(simulation=Simulation.DEFAULT, fast=fast, theta_0=t0)
+    paths = [(get_path(simulation=simulation, fast=fast, inhibition=inhibition),
+              get_n_estimated(simulation, inhibition)) for simulation, fast, inhibition in get_runs()]
+    paths += [(get_path(simulation=Simulation.DEFAULT, fast=fast, theta_0=t0), N_TRIALS)
               for fast in (False, True) for t0 in get_thetas_0(fast=fast)]
-    paths += [get_path(simulation=Simulation.DEFAULT, fast=True, lr=(name, value))
+    paths += [(get_path(simulation=Simulation.DEFAULT, fast=True, lr=(name, value)), N_TRIALS)
               for name in LEARNING_RATES for value in get_learning_rates(name)]
     with Pool(n_workers) as pool:
-        for path in paths:
+        for path, n_estimated in paths:
             with open(path, 'rb') as handle:
                 results = load(handle)
-            performances = pool.map(get_performance, [result[K_CORRECT_TRIALS] for result in results])
+            performances = pool.starmap(get_performance, [(result[K_CORRECT_TRIALS], n_estimated)
+                                                          for result in results])
             for result, performance in zip(results, performances):
                 result.update(performance)
             with open(path, 'wb') as handle:

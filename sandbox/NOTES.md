@@ -707,7 +707,7 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     (330 after the lift) they get no head start from the blind trials.
 - What the bottom-up rules get from the apical signal (user, 2026-10-19: what the gate power is, which bounds, why `us`
   and `burst` do not help, and how much of the speed-up is denoising rather than apical selection; page
-  https://claude.ai/artifact/TEQc33iyRMba3qj8rfNQQM). Seeds 0-9 without inhibition at the control4 rates.
+  `sandbox/results/scratch_2026-10-16_22/decomp/page/apical_selection.html` (published page deleted 2026-11-03)). Seeds 0-9 without inhibition at the control4 rates.
   - Code: `rule_sees_gain='never'` hands the rule gain 1 and resting apical activity at the outcome step too (`False`
     keeps the outcome-time activity as in September, so a sliding threshold or running average still sees the gain);
     `rule_frozen_inputs` sets the rule's update of the listed inputs to 0 (both causal ablations only); `scan_gated`
@@ -744,7 +744,7 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     seeds are expert; `burst` at 0.008 no longer diverges (1028, 8 of 10) and at 0.032 all seeds diverge.
 - Apical-deviation rule (user, 2026-10-19: the apical signal should dictate the bottom-up plasticity and its benefit,
   task inputs becoming stronger than the distractors; rule dw_k = lr x_k (x_ap - x_ap_bar), or with the gain; page
-  https://claude.ai/artifact/UuEfGsvBYtXegFdyGShyqz). Control4 rates, no inhibition.
+  `sandbox/results/scratch_2026-10-16_22/apdev/page/apdev_rule.html` (published page deleted 2026-11-03)). Control4 rates, no inhibition.
   - Code: rule `apdev` in `sandbox/rules.py` (`apdev_tau`, `apdev_signal` 'gain' or 'x_ap', `apdev_bar_outcome`,
     `apdev_mult`); `init_task_gain` and `init_task_rows` in `simulate.py` (causal test: scale the initial tone and
     texture weights, or the textures only, and rescale each neuron to its previous total); `task_share` and
@@ -773,7 +773,7 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     plasticity) learns in 504, 286 and 205 trials (contrast 0.14, 0.21, 0.30); tone and textures x2, x4, x8: 568,
     351 and 363 (one seed 1606).
 - Faster rates for `apdev` (user, 2026-10-19: which rates were tried, and would faster ones help more; page
-  https://claude.ai/artifact/5zmyn78X7HjMjvGcppuyHG). Soft bound, `apdev_tau` 20, control4 rates, no inhibition,
+  `sandbox/results/scratch_2026-10-16_22/apdev/page_rates/apical_rule_rates.html` (published page deleted 2026-11-03)). Soft bound, `apdev_tau` 20, control4 rates, no inhibition,
   seeds 0-9.
   - Code: `rule_start_trial` (causal ablation: the rule's updates dropped before this trial, its running averages run
     from the first) and `init_task_mode` `'shift'` (with `init_task_gain` and `init_task_rows` `'textures'`: every
@@ -808,7 +808,7 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     0 at x4: relative selectivity of the responsive neurons 0.41 to 0.17, neurons with no-go above twice go 14.6 to
     8.9 percent).
 - Apical rule without g_bar, with normalization (user, 2026-10-19: remove the bar term and add a normalization, to
-  remove the depression; page https://claude.ai/artifact/KcNfjUBvFmBdUUXMH2htJt). Control4 rates, no inhibition.
+  remove the depression; page `sandbox/results/scratch_2026-10-16_22/nobar/page/normalized_apical_rule.html` (published page deleted 2026-11-03)). Control4 rates, no inhibition.
   - Code: `apdev_bar` in `sandbox/rules.py` (`False`: dw = lr x_in s, no low-pass; `apdev_tau` inf gives the
     rest-subtracted s - rest); `check_reproduces` 16/16 identical. Runs `nobar_screen` (seeds 0-2), `nobar_stage2`
     (0-9), `nobar_stage3` (10-39) in `sandbox/results/apdev4/`; time courses from the decomposition script.
@@ -861,7 +861,7 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     0.39, 22.0; 1e-6 and below as the control. So selectivity is reduced, not gone, and only where learning suffers.
     The x w rule (`pre` 0.003; seeds 0-9 92 trials faster, 10 of 10) keeps the preference (0.77, response contrast
     0.50) but leaves 84 percent of the neurons unresponsive to the textures (control 53): all task input sits on the
-    16 percent it recruits. Page section on https://claude.ai/artifact/KcNfjUBvFmBdUUXMH2htJt (v3).
+    16 percent it recruits. Page section on `sandbox/results/scratch_2026-10-16_22/nobar/page/normalized_apical_rule.html` (published page deleted 2026-11-03) (v3).
   - Times the basal drive instead of the weight (user, 2026-10-20): dw_ki = lr x_k (g_i - 1) x_bas_i (`apdev_mult`
     `'bas'`, `apdev_tau` inf; x_bas is the un-gained basal drive with the background; exactly silent at gain 1;
     `check_reproduces` 16/16 identical). Seeds 0-9 paired: `pre` 0.0001 / 0.0003 / 0.001 5 / 12 / 6 trials faster on
@@ -882,7 +882,7 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     as in the control (48 percent texture-responsive, 23 percent selective), tone and textures about twice their
     start on the recruited neurons. x_bas minus a threshold is gated Hebb at gate power 1 (657 trials, `l1`). Per-seed
     expert trials in `sandbox/results/apdev4/xbas.jsonl` (and the slower additive rates in `slow.jsonl`); page section
-    on https://claude.ai/artifact/KcNfjUBvFmBdUUXMH2htJt (v4).
+    on `sandbox/results/scratch_2026-10-16_22/nobar/page/normalized_apical_rule.html` (published page deleted 2026-11-03) (v4).
   - Why the x_bas rule fails under per-neuron L1 (user, 2026-10-21: in naive no plasticity, then the apical signal
     at cue and touch strengthens those inputs against the distractors, x_bas keeps T1 above T2, L1 keeps it sparse;
     is that not what happens?). Instrumented re-runs (the rule and the bound wrapped only to read: the rule's
@@ -917,7 +917,7 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     0.001 1021 (40, 101), 0.003 964 (40 of 40, 157 trials, 14 percent, p 2e-12; faster than x w `pre` 0.003 in 37 of
     40 seeds, none slower, by 47 trials, p 1e-7; recruited 18 percent, preference 0.82 to 0.94 on seeds 0-9), 0.01
     loses 4 of 10. Per-seed results (decomposition, ablation, fresh-network and 40-seed runs) in
-    `sandbox/results/apdev4/deep.jsonl`; page section on https://claude.ai/artifact/KcNfjUBvFmBdUUXMH2htJt (v5).
+    `sandbox/results/apdev4/deep.jsonl`; page section on `sandbox/results/scratch_2026-10-16_22/nobar/page/normalized_apical_rule.html` (published page deleted 2026-11-03) (v5).
   - (x - x_bar) and x_bas^2 (user, 2026-10-21: subtract each input's average so that frequent inputs are potentiated
     less; square x_bas to keep the T1-T2 gap). `apdev_xbar` and `apdev_bas_power` in `sandbox/rules.py`: dw = lr (x -
     x_bar) (g - 1) x_bas^p, x_bar a running average over 50 trials (`apdev_xbar_tau`; from 0, used before its update):
@@ -1020,10 +1020,10 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
     0.0001 1 of 10, 0.0003 5, 0.001-0.01 8, 0.03 9, 0.1-0.3 10, the expert seeds as fast as the control (230); with TD
     rate 0.0025 seed 6 still diverges, with 0.0015 no seed diverges but the rule is only about 3 percent faster
     (393-396 against 406). Scan, fast and transplant rows in `sandbox/results/apdev4/final_scan.jsonl`; page
-    https://claude.ai/artifact/4ACjibSDakeKpWts2xh7Py. Ported to the main code on 2026-10-22 (user: an additional rule
+    `sandbox/results/scratch_2026-10-16_22/final/page/final_apical_rule.html` (published page deleted 2026-11-03). Ported to the main code on 2026-10-22 (user: an additional rule
     for now) as `BU_APICAL`, whose two runs are bit-identical to the figure set `apical4` (see CLAUDE.md).
   - Fast regime (user, 2026-10-22: optimize the final apical rule for the fast regime; page
-    https://claude.ai/artifact/EQMVLQ6ASuPuv9DyTUsYX2; runner `diag.py`, tables `tab.py` and `onset.py`, configs, logs
+    `sandbox/results/scratch_2026-10-16_22/fast/page/apical_rule_fast.html` (published page deleted 2026-11-03); runner `diag.py`, tables `tab.py` and `onset.py`, configs, logs
     and per-seed data in `sandbox/results/scratch_2026-10-16_22/fast/`, seeds 0-9, 1800 trials): at control3's rates
     every bound (`l1`, `pre`, `both`, `soft`, `clamp`) loses seeds to divergence of the TD value estimate at every rate
     from 1e-4 (`l1` 1e-4 / 3e-4 / 1e-3 / 3e-3: 1 / 5 / 8 / 8 of 10; `pre` from 3e-4 9-10 of 10; `both` 1-7; `soft` all;
@@ -1070,3 +1070,151 @@ The `Simulation.BU_PLASTICITY` variant and the exploration sandbox are committed
   and of `python main.py plot`; `v3/s12b_line/` (the S12b line, page version 4): `panels.py` before it, the S12b PNGs
   with the line and the before/after difference sheet. The page source is version 4, with `fast_regime_v3.html`. The
   scripts run from the repo root (`PYTHONPATH` set to it); their output paths point to the session's scratchpad.
+
+## Gain-blind policy: does apical-driven bottom-up plasticity support learning without the gain? (2026-11-02)
+
+User (2026-11-02), for S15: show that the apical amplification, more than the bottom-up plasticity, carries the
+behavioural learning. Two experiments, both with bottom-up plasticity dictated by the apical (unsigned TD) signal and
+without the multiplicative gain reaching behaviour: (1) remove the gain from what the policy receives and optimize all
+parameters, against the apical-inhibition case; (2) the same seeds as the control, the control's own apical activity per
+neuron and time step replayed into the basal rule of a gain-blind run, optimizing the bottom-up parameters.
+
+- Knobs (`sandbox/simulate.py`, defaults = main code, `check_reproduces` 18/18 identical): `policy_sees_gain` (False:
+  the policy integrates the un-gained basal drive and its update uses the outcome-time activity at gain 1, BKG;
+  'outcome': only the update keeps the outcome-time gain), `record_apical` (saves x_ap of every neuron at every step,
+  outcome step last, float32 trials x 17 x 1000) and `apical_replay` (the rule reads a recording's x_ap and its gain, and
+  the un-gained drive as somatic rate). The trial loop draws the same random numbers in every trial whatever the agent
+  does, so a replay sees the control's stimuli in every trial. `sandbox/check_gainless.py`: the gain-blind policy
+  without plasticity has exactly the outcomes of the main code's APICAL_INHIBITION run (the gain is 1 at every step
+  there, so both policies read x_bas and learn with BKG), and replaying a run's own recording reproduces it (apical4,
+  outcomes and every w_bas snapshot). Scans: `sandbox/scan_gainless.py` (control4 base exactly as the main code: relabeled
+  neurons, gain at the preferred stimulus; Smith expert trial of the main code over the whole run; one JSON line per
+  seed) and `sandbox/tab_gainless.py` (score: mean expert trial with non-expert seeds at the run length; paired
+  difference to a reference). Results in `sandbox/results/gainless/` (gitignored).
+- Recording: control4, seeds 0-9, 4000 trials (`replay_control4/seed<s>.npy`, 2.7 GB); its Smith expert trials over
+  4000 trials (1375, 984, 830, 867, 1254, 1074, 884, 970, 1023, 1707) equal those of the main code's 4000-trial run.
+- Expectation: the gain multiplies the policy's input on the recruited neurons (up to 10 at cue and touch) and the
+  outcome-time factor of its update (up to 10 at a salient outcome), so a gain-blind policy at the same rate learns up
+  to about 100 times less per trial; the policy rate has to be part of the search, and the basal plasticity's
+  contribution is measured against the gain-blind policy without it at the same rates (= apical inhibition).
+- Gain-blind policy alone (= apical inhibition; seeds 0-9, 1800 trials): no seed expert at lr_policy 0.004, 0.016 and
+  0.064 (performance 0.50-0.51 throughout); learning starts at 0.256 (64 x control4). The apical loop still runs on the
+  gained activity, so 23-25 percent of the neurons are recruited (final w_ap > 0.5) as in the control (25), without any
+  behavioural learning.
+  At 0.256 and 1.024 the reason is a lock-in: by trial 100 the gain-blind policy licks on 95-100 percent of the go and
+  the no-go trials (seed 0), and the policy update carries 1 - p(lick), so learning stops; at 0.256 1 of 10 seeds
+  becomes expert (trial 1047, performance 0.54 over the last 200 trials), at 1.024 none. The 'outcome' variant at
+  control4's rates learns nothing either (0.50).
+- The apical mapping without the gain in behaviour (gain-blind policy at 0.004, no basal plasticity, seeds 0 and 1):
+  the touch signal (mean touch-time apical activation of the recruited neurons above 0.3, 20-trial average) appears at
+  trials 912 and 915 against 757 and 788 in the control, with the same recruitment (0.23-0.24) and the same final touch
+  activity (0.96, 0.97 against 0.91, 0.89 over the last 200 trials): delayed by 130-155 trials, not hindered.
+- Round 1 (`s2_apical.jsonl`, seeds 0-4, 1800 trials; the final apical rule, `apdev` step x_bar, x_bas^2, `l1`;
+  e1 = live apical signal, e2 = control4's recorded signal replayed, the run's own apical loop still on): at
+  lr_policy 0.016 and 0.064 nothing learns with or without the rule (0.51 at the end) although the rule reshapes the
+  weights (texture detectors 4.5 to 16-42 percent, recruitment up to 0.45 at lr_bas 0.05); at 0.256 (policy alone 1 of 5
+  expert, 0.58 at the end, licking 0.92) e1 0.005: 1 of 5, 0.60; e1 0.05: 0 of 5, 0.41 (1 diverged); e2 0.005: 2 of 5
+  (857, 1312), 0.68, licking 0.82; e2 0.05: 2 of 5 (707, 1459), 0.64; at 1.024 (policy alone 0 of 5, 0.50, licking
+  frozen at 0.60: some seeds always lick, the others never) 0 or 1 of 5, 0.50-0.60. lr_bas 0.5 diverges in every
+  setting (the value estimator, which still reads the gained activity, as in the fast regime; in e2 the run's own
+  loop, so later replays switch it off with lr_td = lr_ap = 0). Control4 for reference: 10 of 10 expert at 1100, 0.94.
+- Recording of control3 (fast regime: lr_td 0.0035, lr_policy 0.016, lr_ap 0.512, theta_0 3), seeds 0-9, 1800 trials
+  (`replay_control3/`, 1.3 GB): 10 of 10 expert, mean 230 as the main code's fast control.
+- Round 2 (`s4_fastloop.jsonl`, seeds 0-4): replays now with the run's own apical loop off (lr_td = lr_ap = 0, so gain
+  1 at every step; 'e2r' control4's signal, 'e2f' control3's), which removes the divergence at large lr_bas. Policy
+  alone: 0.128 0 of 5 (0.51, licking 0.99), 0.512 1 of 5 (0.60, licking 0.91). e2r: 0.128 with lr_bas 0.005 / 0.05 /
+  0.5: 2 / 1 / 1 of 5 (0.64 / 0.59 / 0.60); 0.256 with 0.5 / 2: 1 / 1 (0.59 both, licking 0.70); 0.512 with 0.005 /
+  0.05 / 0.5: 3 / 2 / 1 of 5 (0.71 / 0.66 / 0.59). e2f (control3's signal, its touch signal from about trial 170) at
+  0.256 with 0.005 / 0.05 / 0.5: 3 / 1 / 0 of 5 (0.72 / 0.57 / 0.51); at 0.064 with 0.05: 0 (0.51). The live signal
+  (e1) with control3's apical loop (lr_td 0.002 for stability, lr_ap 0.512, theta_0 3; recruitment 0.10-0.11) at 0.256
+  with 0.005 / 0.05: 1 / 1 of 5 (0.60 / 0.59); at 0.064: 0; with control4's loop and lr_td 0.0002 at 0.256: lr_bas 0.05
+  1 of 5 (0.58), 0.5 0 of 5 (every neuron recruited, licking on every trial). So the live apical signal of a gain-blind
+  network never beats the gain-blind policy alone, and the replayed signal of a gained control adds 1 or 2 expert seeds
+  of 5 at policy rates 32 to 128 times control4's (final 0.6 to 0.7), far from the control (10 of 10 at 1100, 0.94).
+- Round 3 (`s5_rules.jsonl`, seeds 0-4, control4's signal replayed, loop off, lr_policy 0.256; policy alone 1 of 5,
+  0.58): the rule matters. Final rule at lr_bas 0.05 with x_bas^1 / x_bas^3: 1 / 2 of 5 (0.58 / 0.63); x_bar tau 10 /
+  200: 2 / 2 (0.64 / 0.62); `pre` instead of `l1`: 0 (licking on every trial); tone frozen (causal ablation): 2 (0.68);
+  dw = lr (x - x_bar) w (g - 1) x_bas under `pre` (the fastest rule in the gained network, 2026-10-21) at 0.3 / 3: 3 / 4
+  of 5 (0.73 / 0.87; 330, 508, 1005, 1044 at 3, licking 0.62); gated Hebb (`l1`, `gh_post` bas, lr_bas 0.512,
+  `theta_bas_0` 14, gate power 1, the 2026-10-18 setting): 3 of 5 (406, 461, 704; 0.75).
+- Round 4 (`s7_strong.jsonl`, seeds 0-4): the two strong rules pushed. Replayed control4 signal at lr_policy 0.256:
+  w x_bas `pre` at lr_bas 10 / 30: 4 / 4 of 5 (median 696 / 648, 0.86 both); gated Hebb at gate power 0.5 / 0.25: 4 / 4
+  (median 391 / 326, 0.85 / 0.87). The same rules at lower policy rates: w x_bas (3) at 0.064 1 of 5 (0.58), at 0.016
+  and 0.004 none (0.52); gated Hebb (gate power 1) at 0.064 none; at 1.024 w x_bas 1 of 5. Live signal (e1, control4's
+  loop): w x_bas `pre` 3 at 0.256 4 of 5 (median 987, 0.86; with lr_td 0.0002 4 of 5, 1236, 0.82), at 0.064 2 of 5
+  (0.61); gated Hebb (gate power 1) 1 of 5 (0.59). Replayed control3 signal: w x_bas 3 at 0.256 4 of 5 (median 666).
+- Round 5 (`s8_compare.jsonl`, seeds 0-4): the gained control (control4, no rule) at higher policy rates: 0.016 5 of 5
+  (median 875, 0.99), 0.064 2 of 5 (0.69), 0.256 0 of 5 (0.48: the gain multiplies the policy's effective rate, and at
+  0.256 every seed locks in). Gated Hebb at gate power 0.25 without the gain: live signal at 0.256 4 of 5 (median 331,
+  0.86), at 0.064 3 of 5 (866, 0.69); replayed control4 signal at 0.064 3 of 5 (801, 0.70), at 0.016 and 0.004 none
+  (0.52, 0.53); replayed control3 signal at 0.256 4 of 5. So the gain and the bottom-up plasticity work at different
+  policy rates: with the gain, learning needs a slow policy (and fails from 0.256 by lock-in); without it, the rule
+  supports learning only from 0.064, where the policy alone (= apical inhibition) learns in at most 1 of 5 seeds.
+- Round 6 (`s9_rates.jsonl`, seeds 0-4): the policy-rate curves (`python -m sandbox.plot_gainless_rates
+  sandbox/results/gainless/fig/rates_seeds0-4.png 0-4`, numbers in `fig/rates_seeds0-4.txt`). Gained control4: 5 of
+  5 at 0.004 and 0.016, 2 at 0.064, none from 0.128 (lock-in). Gained network at control3's rates (the main code's
+  S15e lr_policy sweep, seeds 0-4): 5 of 5 from 0.002 to 0.032 (mean 221-302 trials, 221 at 0.016), 4 of 5 from 0.045
+  to 0.09, none at 0.128. No gain (= apical inhibition): at most 1 of 5 at any rate (0.256, 0.512). No gain + gated
+  Hebb (gate power 0.25), live signal: 0 at 0.004 and 0.016, 3 at 0.064, 4 of 5 at 0.128 / 0.256 / 0.512 (mean with
+  the failed seed at 1800: 760 / 646 / 762; experts 180-913), 2 at 1.024; replayed control4 signal: the same within a
+  seed or two (0, 0, 3, 4, 4, 4, 1). The failing seed is seed 0 in every no-gain setting (locked in, 0.51). Live
+  signal at 0.256, other settings: gate power 0.125 4 of 5 (experts 192-632, mean 616), lr_bas 0.128 / 2: 4 / 1,
+  theta_bas_0 7 / 28: 4 / 4, control3's apical loop (lr_td 0.002): 4 of 5 (188-644).
+- Round 7 (`s10_shuffled.jsonl`, seeds 0-4, policy 0.256; `apical_replay_shift` 1: each seed replays the next seed's
+  recording, so the apical activity falls on unrelated neurons at the same time steps of the trial): gated Hebb gate
+  power 0.25 4 of 5 (201, 205, 436, 575; own recording 203, 214, 437, 527), gate power 1 3 of 5 (403, 543, 726; own
+  406, 461, 704), w x_bas `pre` 3 3 of 5 (372, 518, 1424; own 330, 508, 1005, 1044). The benefit of the rules does not
+  need the apical signal on the right neurons: it is time-locked Hebbian clean-up of the basal input (pruning and
+  sharpening at cue and touch, on any neuron with a little apical activity), which helps a fast policy escape the
+  licking lock-in.
+- Reading (2026-11-02): (1) at control4's policy rate and up to 4 times it, learning needs the gain: without it no rule
+  setting, with the live or the replayed signal, makes a single seed expert; (2) without the gain, apical-triggered
+  plasticity supports learning only with a policy 16 to 128 times faster (4 of 5 seeds), where the gained network
+  itself locks in; (3) with every rate optimized, the gained network learns in 5 of 5 seeds at about 220 trials
+  (control3 rates), the best gain-blind network with plasticity in 4 of 5 (experts about 190-640, one seed locked in);
+  (4) the live apical signal of a gain-blind network serves the rule as well as the control's replayed signal (the
+  mapping is only delayed, 130-155 trials), and another network's apical activity serves it as well too, so the
+  plasticity's contribution is unspecific. The amplification is the major contribution. Open: 10 seeds for the
+  points of a figure (5 per point so far; the scans are slow while the GoalHabit scans share the machine).
+  Page: `sandbox/results/gainless/page/gainless.html` (published page deleted 2026-11-03) (source and figures in `sandbox/results/gainless/page/`).
+- Seeds 0-9 of the two best live-signal settings (`s11_best.jsonl`, policy 0.256, gated Hebb `l1`, lr_bas 0.512,
+  `theta_bas_0` 14): gate power 0.25 9 of 10 (580, 225, 189, 437, 601, 1106, 1057, 210, 1188; seed 0 not), gate power
+  0.125 9 of 10 (632, 209, 192, 247, 593, 1177, 726, 178, 828), signed rank n.s. Ported on 2026-11-02 (user: "take over
+  the best parameters and run the full simulations ... add these results into figure fs15 a and b") as
+  `Simulation.BU_GAIN_BLIND` at gate power 0.25 (see CLAUDE.md, Figure review); the main code reproduces the sandbox
+  seed by seed. Page version 2 (same URL) shows S15a and S15b with it.
+
+## Gain plus plasticity ("both") and plasticity from the policy loss (2026-11-03)
+
+User (2026-11-03): optimize the model with the gain and bottom-up plasticity ("in theory it should be the fastest or at
+least equal to just gain") for S15b, labelled with "only gain" (the fast regime) and "only plasticity"
+(`BU_GAIN_BLIND`); and optimize, for the unperturbed protocol, a model whose basal plasticity is backpropagated from the
+policy loss, not influenced by the TD learning or the apical activity. Smith expert trials (the user: keep Smith).
+
+- "Both" = the gated Hebbian rule of `BU_GAIN_BLIND` (`l1`, `gh_post` bas, `theta_bas_0` 14) in a network whose policy
+  sees the gain, from control3's rates. Round 1 (`s12_both.jsonl`, seeds 0-4; control3 221, hebb3 133): at control3's
+  TD rate (0.0035) gate power 0.25 diverges (4 / 2 of 5 at lr_bas 0.128 / 0.512); TD 0.0025, gate power 0.25, lr_bas
+  0.512: 129 (5 of 5 faster than control3); gate power 1: 191-240 (the plasticity hardly acts). Round 2
+  (`s14_both2.jsonl`, one rate at a time): theta_0 2.5 118, TD 0.003 118, policy 0.008 126, lr_ap 1 129; lr_bas 1 / 2,
+  gate power 0.125, `theta_bas_0` 7 / 28 worse (one slow seed each, or divergence at 7). Round 3 (`s16_both3.jsonl`):
+  all combinations 108-119. Ported as `BU_GATED_HEBB` at theta_0 2.5, TD 0.003 (109 on seeds 0-4; `check_reproduces`
+  22/22). The main-code run on seeds 0-9 equals the sandbox on seeds 0-4 but fails on two of the others: seed 6
+  diverges at trial 174 (the TD value estimate), and seed 8, near perfect from trial 200, gets its Smith expert trial
+  at 1609, because brief error bursts from trial 1228 on make the estimator fit a large process noise and its lower 5
+  percent bound dips below chance (the estimate itself stays at 0.74 or more): mean 272 (9 expert) against 230, faster
+  in 8 of 10 seeds, n.s. The 5-seed search overfitted; it is redone on seeds 0-9 (`s18_ten.jsonl`).
+- Policy-gradient plasticity (`lr_bas_pg`, new knob: at each outcome dw_ki = lr_bas_pg r (1 - p) X_k w_pol_i, X_k =
+  1 if input k occurred, the REINFORCE gradient through the policy's readout of the un-gained basal drive; with
+  `policy_sees_gain` False and lr_td = lr_ap = 0, so neither the TD learning nor the apical activity acts; the policy
+  alone at these rates locks in). Round 1 (`s13_backprop.jsonl`, seeds 0-4): `clamp` fails, `l1` works; policy 0.064,
+  lr_bas_pg 100: 5 of 5 expert (median 184) but performance plateaus at about 0.75 (licking 0.7), 0.79 after 4000
+  trials. Rounds 2 and 3 (`s15_backprop2.jsonl`, `s17_backprop3.jsonl`, with `t80`, the first trial with the Smith
+  estimate at 0.8): a faster rule becomes expert earlier but plateaus lower; policy 0.128, lr 50: Smith 204-387, t80
+  397-932, final 0.87; policy 0.128, lr 30: 236-824, t80 399-1040, 0.91; policy 0.064, lr 30 over 4000 trials: final
+  0.95; `pre`, `both` never learn, `soft` slower.
+- Seeds 0-9 (`s18_ten.jsonl`): "both" at theta_0 2.5, TD 0.002, lr_bas 0.512: 10 of 10 (158, 95, 123, 160, 102, 129,
+  96, 118, 111, 144; mean 124), no divergence; theta_0 3, TD 0.002: 142; every setting with TD 0.0025 or 0.003 loses
+  seed 6 (divergence), at 0.003 also seed 8 (1273-1608, late relapses). Ported again (`BU_GATED_HEBB`, TD 0.002); the
+  main code reproduces seeds 0-9 exactly; after the lift 10 of 10 (80-139). Policy gradient on seeds 0-9: policy
+  0.064, lr 100: 10 of 10, mean 276 (median 179; seed 6 1037), final 0.73, the Smith estimate at 0.8 in 3 of 10;
+  policy 0.128, lr 50: 10 of 10, mean 304 (204-410), at 0.8 in 10 of 10 (397-932), final 0.87.
