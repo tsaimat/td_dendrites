@@ -4,15 +4,16 @@ This is the main script to run the simulations and plot the panels of the manusc
 "Error representations in apical dendrites of neocortical layer 5 pyramidal neurons during learning" by G. Schoenfeld,
 S. Kollmorgen, M.C. Tsai, C. Lewis, S. Han, P. Bethge, A.M. Reuss, A. Aguzzi, W. Senn, V. Mante and F. Helmchen.
 
-Plotting requires the results of the simulations to be present in the 'results' directory. The results can be generated
-by running the simulations with the command:
+Without an argument, the script runs all the simulations, including the extraction of the performance traces with the
+method of Smith et al. (2004), saves their results in the 'results' directory and then plots all the panels:
+>> python main.py
+The simulations might take a while to run depending on the hardware. Each step can also be run on its own: the
+simulations (including the performance traces) with
 >> python main.py simulate
-The simulations might take a while to run depending on the hardware. They include the extraction of the performance
-traces with the method of Smith et al. (2004), which can be repeated on the saved results with:
+the extraction of the performance traces of the saved results again with
 >> python main.py perf
-Finally, all the panels can be plotted by running:
+and the plotting of all the panels from the saved results with
 >> python main.py plot
-If no argument is provided, the script will default to plotting all the panels.
 """
 
 import sys
@@ -25,6 +26,7 @@ __version__ = "2.0.0"
 if __name__ == '__main__':
 
     if len(sys.argv) == 1:
+        l5apical.simulations.run()
         l5apical.panels.plot_all()
     else:
         if str(sys.argv[1]) == 'plot':
@@ -38,9 +40,13 @@ if __name__ == '__main__':
 
         # Explain correct usage syntax
         else:
-            print("Proper usage requires argument 'plot' or 'simulate' or 'perf'. To plot all the panels enter: \n"
-                  ">> python main.py plot\n"
-                  "\nTo run all the simulations (including the extraction of the performance traces) enter:\n"
+            print("Proper usage requires no argument or the argument 'simulate', 'perf' or 'plot'. To run all the "
+                  "simulations (including the extraction of the performance traces) and then plot all the panels "
+                  "enter:\n"
+                  ">> python main.py\n"
+                  "\nTo only run all the simulations (including the extraction of the performance traces) enter:\n"
                   ">> python main.py simulate\n"
                   "\nTo extract the performance traces of the saved results again enter:\n"
-                  ">> python main.py perf")
+                  ">> python main.py perf\n"
+                  "\nTo only plot all the panels from the saved results enter:\n"
+                  ">> python main.py plot")

@@ -1218,3 +1218,63 @@ policy loss, not influenced by the TD learning or the apical activity. Smith exp
   main code reproduces seeds 0-9 exactly; after the lift 10 of 10 (80-139). Policy gradient on seeds 0-9: policy
   0.064, lr 100: 10 of 10, mean 276 (median 179; seed 6 1037), final 0.73, the Smith estimate at 0.8 in 3 of 10;
   policy 0.128, lr 50: 10 of 10, mean 304 (204-410), at 0.8 in 10 of 10 (397-932), final 0.87.
+
+## One rule for S14 and S15: each rule in every condition (2026-11-12)
+
+User (2026-11-12): S14 (`BU_APICAL`, dw = lr (x - x_bar)(g - 1) x_bas^2, "rule A") and S15 (`BU_GAIN_BLIND` /
+`BU_GATED_HEBB`, gated Hebb dw = lr x a^0.25 (x_bas - theta_bas), "rule B") use different rules; the user does not want
+two plasticities in two figures and asked for each rule optimized for every condition. Rule B had been optimized in all
+three (S14 on 2026-10-18, see "Rules with an explicit apical factor re-tuned on control4"; the two S15 conditions on
+2026-11-02 and 03), rule A only in S14, so rule A was searched in the two S15 conditions, directly on seeds 0-9
+(`scan_gainless`, 1800 trials, score = mean expert trial with non-expert seeds at 1800). Configs, runs and the
+scripts (`make_cfg*.py`, the config generators, and `sparsen.py`, the weight analysis below) in
+`sandbox/results/gainless/` (`s19` to `s22`, `scripts_2026-11-12/`).
+
+- Why rule B was set aside after 2026-10-18 (asked by the user; no explicit decision recorded): the 2026-10-19
+  decomposition showed its speed is pruning (no gate: 389 trials; stronger gate slower), and the user then asked for a
+  rule where the apical signal dictates the plasticity and its benefit, task inputs growing against the distractors,
+  which led to rule A. Weights at trial 1800 against the initial ones (`sparsen.py`, main-code runs, seeds 0-9): rule B
+  (both S15 runs alike) leaves 2.2 inputs above 0.05 per neuron (7.4 initially), raises each neuron's initially
+  strongest and second strongest input by 0.22 and 0.20 and lowers the others, keeps the initially strongest input on
+  top in 66-70 percent of the neurons (texture-led 87-88), turns 3 percent of the distractor-led neurons into
+  texture-led ones, and lowers the task inputs' share of a neuron's input from 9.1 to 5.1-5.4 percent (texture
+  detectors 4.5 to 8.1-8.5 percent): a rich-get-richer pruner indifferent to task relevance. Rule A keeps 7.3 inputs,
+  lowers the initially strongest by 0.07 (on the recruited neurons), turns 12 percent of the distractor-led neurons
+  into texture-led ones and raises the task share to 17 percent (texture detectors 17 percent).
+- "Only plasticity" (gain-blind policy, control4 base, everything free; `s19`, 38 settings, `s22`, 21 settings):
+  policy alone 1 of 10 expert at 0.256 and 0.512, none at 0.128 (also 1 of 10 at theta_0 2). Rule A at control4's
+  theta_0 (2.35), policy 0.064 to 0.512, lr_bas 0.002 to 0.05, or with control3's apical loop (theta_0 3, TD 0.002,
+  lr_ap 0.512): at most 2 of 10. More recruitment helps: theta_0 2, policy 0.256, lr_bas 0.02: 5 of 10 (1461, 687,
+  1578, 1690, 1254; score 1567; 58 percent recruited, 48 percent texture detectors; the non-experts end at 0.46-0.62);
+  x_bar tau 10 / 200 and lr_ap 0.056 the same (5 of 10), policy 0.512 or theta_0 2.25 worse (3-4), theta_0 1.75 and 1.5
+  diverge at control4's TD rate and at TD 0.0002 give 2-3 of 10. Rule B at theta_0 1.75 and 2 (policy 0.256, its
+  setting otherwise): 9 of 10, score 740 (582, 225, 190, 437, 597, 1109, 1061, 210, 1187; seed 0 locked in), as at
+  theta_0 2.35 (739), so theta_0 does not matter for it.
+- "Both" (gain on, control3 base, everything free; `s20`, 49 settings, `s21`, 19): only gain (control3) 230 (263, 192,
+  192, 217, 240, 226, 204, 193, 189, 382). Rule A diverges at theta_0 2.5 from TD 0.002 and at theta_0 3 from TD 0.0025
+  (seed 6 first, as for rule B); every stable setting is slower than only gain in every seed. Best: theta_0 3.5, TD
+  0.003, lr_bas 0.01: 308 (370, 237, 226, 253, 395, 372, 251, 292, 233, 449), against 318 for the same rates without the
+  rule (7 of 10 seeds faster); theta_0 3, TD 0.002: 318 against 339. lr_bas 0.003 to 0.03, x_bar tau 10 / 200 change
+  under 10 trials; policy 0.008 / 0.032 and lr_ap 0.256 / 1 are slower; theta_0 3.25 or 3.5 with TD 0.0035 or 0.004
+  loses seed 6 (median 229 at theta_0 3.25, TD 0.0035). The control alone at theta_0 3.25, TD 0.003 is 280. Rule B: 124.
+- Reading: rule B is the faster rule in every condition (S14 403 against 988; only plasticity 9 against 5 of 10
+  seeds; both 124 against 308, and rule A never beats only gain). Rule A's benefit is the apically selected one but
+  small, and in the fast regime it costs more TD rate than it gains.
+- Decision (user, 2026-11-12): the S14 rule (rule A) everywhere, in the main code, S15 re-run and replotted; no
+  inhibition runs for S15. Port: `BU_GAIN_BLIND` = the apical rule (`l1`, `lr_bas` 0.02, `xbar_tau` 50) at theta_0 2,
+  policy 0.256, the gain-blind policy (sandbox `A_t2_p0.256_b0.02`); "both" = `BU_APICAL` with a fast-regime setting
+  (`l1`, `lr_bas` 0.01, `xbar_tau` 50, theta_0 3.5, TD 0.003; sandbox `A_t3.5_td0.003_b0.01`); `BU_GATED_HEBB` and
+  `GATE_POWER` removed; `S15_SIMULATIONS` gives the two runs 2200 trials and no inhibition run. `check_reproduces`
+  22/22 with `figures/gainblind4/hp.json` re-pointed and `figures/apical3/hp.json` new (the gated `hp.json` files are
+  in the scratch folder). Both runs equal the scans in every seed's expert trial: only plasticity 5 of 10, both 308
+  (median 272); S15b: only gain median 211, every pair p 0.002, both slower than only gain in 10 of 10. S15c to e
+  pixel-identical. Scratch: `sandbox/results/scratch_2026-11-12_onerule/` (`old_results/` the gain-blind and fast
+  gated-Hebb pickles of 2-3 November, `before/` the code and figure-set settings, `old_s15/` the PDFs and SVGs,
+  `run_s15.py`, `s15_numbers.py`, `png_new/` the new renders, the page sources before the cleanup).
+- Only plasticity over 4000 trials (user, 2026-11-12): `BU_GAIN_BLIND` runs `N_TRIALS_GAIN_BLIND` = 4000 trials and
+  its Smith estimate covers all of them; trials 0-2199 equal the 2200-trial run in every seed. 8 of 10 expert (seeds
+  0, 1, 3, 4, 5, 7, 8, 9: 2348, 1458, 1576, 1925, 1692, 2160, 1251, 2323). Seeds 2 and 6 learn (seed 2 expert at 686,
+  0.94-0.99 correct until trial 3094; seed 6 at 3422) and then the TD value estimate diverges (trials 3094 and 3746),
+  so over 4000 trials they are not expert; the user kept them so (n.e. in S15b) rather than estimating up to the
+  divergence or searching a setting stable over 4000 trials. S15b: median 2043, slower than only gain and than both in
+  10 of 10 seeds (p 0.002 each).

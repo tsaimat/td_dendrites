@@ -23,6 +23,8 @@ N_TRIALS_AP_INH = 4000  # Number of trials in case the apical dendrites are inhi
 N_TRIALS_CONTROL = 2200  # Number of trials of the default (and S15's) simulations without inhibition: as many with
 # active apical dendrites as the inhibition protocol has after the lift (figs. 4h and S15a show all of them, every other
 # panel the first 1800)
+N_TRIALS_GAIN_BLIND = 4000  # Number of trials of the gain-blind simulation (fig. S15; user, 2026-11-12: half of its
+# seeds are not expert within 2200 trials with the BU_APICAL rule), over all of which its performance is estimated
 MAX_GAIN = 10.  # Maximum possible apical gain
 BKG = 0.01  # Background activity of pyramidal neurons
 K_V = BKG * MAX_GAIN  # Constant for TD learning plasticity
@@ -100,9 +102,8 @@ class Simulation(Enum):
     """
     Enumeration class for the types of simulations implemented: the model without bottom-up plasticity, with active
     apical dendrites (DEFAULT) or with the apical dendrites inhibited for the first N_TRIALS trials (APICAL_INHIBITION),
-    the model with one of four bottom-up (basal) plasticity rules (BU_HEBB, BU_BCM, BU_CALCIUM, BU_APICAL), the model
-    whose policy does not see the apical gain, with an apically gated Hebbian rule (BU_GAIN_BLIND), and the same rule
-    with the gain (BU_GATED_HEBB)
+    the model with one of four bottom-up (basal) plasticity rules (BU_HEBB, BU_BCM, BU_CALCIUM, BU_APICAL), and the
+    model whose policy does not see the apical gain, with the BU_APICAL rule (BU_GAIN_BLIND)
     """
     DEFAULT = 0
     APICAL_INHIBITION = 1
@@ -111,24 +112,26 @@ class Simulation(Enum):
     BU_CALCIUM = 4
     BU_APICAL = 5
     BU_GAIN_BLIND = 6
-    BU_GATED_HEBB = 7
 
 
 # Bottom-up plasticity simulations
 BU_SIMULATIONS = (Simulation.BU_HEBB, Simulation.BU_BCM, Simulation.BU_CALCIUM, Simulation.BU_APICAL,
-                  Simulation.BU_GAIN_BLIND, Simulation.BU_GATED_HEBB)
+                  Simulation.BU_GAIN_BLIND)
+
+# Bottom-up plasticity simulations of fig. S15 in each learning regime: like the default simulation they run
+# N_TRIALS_CONTROL trials (S15a shows them), the gain-blind one N_TRIALS_GAIN_BLIND, and they are not run in the apical
+# inhibition protocol (user, 2026-11-12)
+S15_SIMULATIONS = {'biological': (Simulation.BU_GAIN_BLIND,), 'fast': (Simulation.BU_APICAL,)}
 
 # Bottom-up plasticity rules in each learning regime: the bound that keeps the basal weights in [0, 1] ('soft': the
 # update is scaled by (1 - w) w, 'pre': each stimulus keeps its initial total weight onto all neurons, 'l1': each
 # neuron keeps its initial total basal input), the basal learning rate (lr_bas) and the constants of the rule (see
-# simulations.basal_rule). BU_APICAL has no setting in the fast regime: at the TD learning rate of that regime the
-# state value estimate diverges at every lr_bas. BU_GAIN_BLIND (biological regime only) also replaces the policy
-# learning rate and has its policy read the basal drive without the apical gain (policy_sees_gain), so that the apical
-# activity reaches behaviour only through the basal weights (sandbox, 2026-11-02: without the gain the policy locks
-# into licking, and the gated rule lets it learn only from a policy rate about 16 times that of the regime).
-# BU_GATED_HEBB (fast regime only) is the same rule with the gain, and also replaces theta_0 and the TD learning rate
-# (sandbox, 2026-11-03: at the regime's TD rate the rule makes the state value estimate diverge)
-GATE_POWER = 0.25  # Power of the apical gate of the BU_GAIN_BLIND and BU_GATED_HEBB rule (normalized activation)
+# simulations.basal_rule). In the fast regime BU_APICAL also replaces theta_0 and the TD learning rate (sandbox,
+# 2026-11-12: at the regime's TD rate the rule makes the state value estimate diverge at every lr_bas). BU_GAIN_BLIND
+# (biological regime only) has the BU_APICAL rule, replaces theta_0 and the policy learning rate and has its policy
+# read the basal drive without the apical gain (policy_sees_gain), so that the apical activity reaches behaviour only
+# through the basal weights (sandbox, 2026-11-02 and 12: without the gain the policy locks into licking, and the rule
+# lets some seeds learn only with a policy rate about 64 times that of the regime and a lower theta_0)
 RULE_HYPERPARAMETERS = {
     'biological': {
         Simulation.BU_HEBB: dict(bound='soft', lr_bas=0.512, theta_bas_0=7.),
@@ -136,16 +139,15 @@ RULE_HYPERPARAMETERS = {
         Simulation.BU_CALCIUM: dict(bound='pre', lr_bas=0.016, ca_theta_p=1.5, ca_ltd_frac=0.4, ca_gamma_d=2.,
                                     ca_beta=2.),
         Simulation.BU_APICAL: dict(bound='l1', lr_bas=0.005, xbar_tau=50.),
-        Simulation.BU_GAIN_BLIND: dict(bound='l1', lr_bas=0.512, theta_bas_0=14., gate_power=GATE_POWER,
-                                       lr_policy=0.256, policy_sees_gain=False),
+        Simulation.BU_GAIN_BLIND: dict(bound='l1', lr_bas=0.02, xbar_tau=50., theta_0=2., lr_policy=0.256,
+                                       policy_sees_gain=False),
     },
     'fast': {
         Simulation.BU_HEBB: dict(bound='soft', lr_bas=0.512, theta_bas_0=10.),
         Simulation.BU_BCM: dict(bound='soft', lr_bas=0.256, bcm_tau=50., bcm_e0_scale=0.25),
         Simulation.BU_CALCIUM: dict(bound='l1', lr_bas=0.001, ca_theta_p=2., ca_ltd_frac=0.5, ca_gamma_d=2.,
                                     ca_beta=2.),
-        Simulation.BU_GATED_HEBB: dict(bound='l1', lr_bas=0.512, theta_bas_0=14., gate_power=GATE_POWER, theta_0=2.5,
-                                       lr_td=0.002),
+        Simulation.BU_APICAL: dict(bound='l1', lr_bas=0.01, xbar_tau=50., theta_0=3.5, lr_td=0.003),
     },
 }
 
@@ -222,10 +224,12 @@ def is_inhibited(simulation: Simulation, inhibition: bool = False) -> bool:
     return simulation == Simulation.APICAL_INHIBITION or inhibition
 
 
-def get_n_trials(simulation: Simulation = Simulation.DEFAULT, inhibition: bool = False, sweep: bool = False) -> int:
+def get_n_trials(simulation: Simulation = Simulation.DEFAULT, fast: bool = False, inhibition: bool = False,
+                 sweep: bool = False) -> int:
     """
     Get the number of trials of a simulation.
     :param simulation: Simulation identifier
+    :param fast: Whether the simulation uses the hyperparameters of the fast-learning regime
     :param inhibition: Whether the apical dendrites are inhibited (only for the bottom-up plasticity simulations)
     :param sweep: Whether the simulation is a point of a theta_0 or learning-rate sweep (N_TRIALS trials, also for the
     default simulation)
@@ -233,7 +237,10 @@ def get_n_trials(simulation: Simulation = Simulation.DEFAULT, inhibition: bool =
     """
     if is_inhibited(simulation=simulation, inhibition=inhibition):
         return N_TRIALS_AP_INH
-    if simulation in (Simulation.DEFAULT, Simulation.BU_GAIN_BLIND, Simulation.BU_GATED_HEBB) and not sweep:
+    if simulation == Simulation.BU_GAIN_BLIND:
+        return N_TRIALS_GAIN_BLIND
+    regime = 'fast' if fast else 'biological'
+    if (simulation == Simulation.DEFAULT or simulation in S15_SIMULATIONS[regime]) and not sweep:
         return N_TRIALS_CONTROL
     return N_TRIALS
 
@@ -274,11 +281,10 @@ def get_rule_name(simulation: Simulation) -> str:
     """
     Get the name of the bottom-up plasticity rule of a simulation.
     :param simulation: Simulation identifier
-    :return: 'hebb', 'bcm', 'calcium', 'apical', 'gain_blind' or 'gated_hebb'
+    :return: 'hebb', 'bcm', 'calcium', 'apical' or 'gain_blind'
     """
     return {Simulation.BU_HEBB: 'hebb', Simulation.BU_BCM: 'bcm', Simulation.BU_CALCIUM: 'calcium',
-            Simulation.BU_APICAL: 'apical', Simulation.BU_GAIN_BLIND: 'gain_blind',
-            Simulation.BU_GATED_HEBB: 'gated_hebb'}[simulation]
+            Simulation.BU_APICAL: 'apical', Simulation.BU_GAIN_BLIND: 'gain_blind'}[simulation]
 
 
 def get_runs() -> list[tuple[Simulation, bool, bool]]:
@@ -290,7 +296,9 @@ def get_runs() -> list[tuple[Simulation, bool, bool]]:
     for fast in (False, True):
         runs += [(Simulation.DEFAULT, fast, False), (Simulation.APICAL_INHIBITION, fast, False)]
         for simulation in get_bu_simulations(fast=fast):
-            runs += [(simulation, fast, False), (simulation, fast, True)]
+            runs += [(simulation, fast, False)]
+            if simulation not in S15_SIMULATIONS['fast' if fast else 'biological']:
+                runs += [(simulation, fast, True)]
     return runs
 
 

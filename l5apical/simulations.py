@@ -101,7 +101,7 @@ def get_params(simulation: Simulation, fast: bool = False, inhibition: bool = Fa
         hp[lr[0]] = lr[1]
     n_task_stim = 3  # Number of task-relevant stimuli
     n_noise_stim = N_NOISE  # Number of distractor stimuli
-    n_trials = get_n_trials(simulation=simulation, inhibition=inhibition,
+    n_trials = get_n_trials(simulation=simulation, fast=fast, inhibition=inhibition,
                             sweep=theta_0 is not None or lr is not None)
 
     # Basal weights, plasticity thresholds (theta) and the Bernoulli distributions of the distractor stimuli
@@ -135,8 +135,8 @@ def basal_rule(simulation: Simulation, x_in: torch.Tensor, x_bas: torch.Tensor, 
     """
     Weight update of the basal synapses by the bottom-up plasticity rule of a simulation, before bounding. The first
     three rules have no explicit apical factor: the apical signal enters through the gain in the somatic activity
-    x_som, so they also act at gain 1 (during apical inhibition). BU_APICAL, BU_GAIN_BLIND and BU_GATED_HEBB are gated
-    by the apical activity and silent at gain 1.
+    x_som, so they also act at gain 1 (during apical inhibition). BU_APICAL and BU_GAIN_BLIND are gated by the apical
+    activity and silent at gain 1.
     - BU_HEBB: x_in (x_som - theta_bas), with the basal threshold theta_bas = theta_bas_0 times the expected basal drive
       per time step (plus background)
     - BU_BCM (Bienenstock, Cooper & Munro, 1982): x_in x_som (x_som - theta_m), with a sliding threshold theta_m that
@@ -147,17 +147,13 @@ def basal_rule(simulation: Simulation, x_in: torch.Tensor, x_bas: torch.Tensor, 
       ca_gamma_d >= 1 the net update of an active synapse is never positive (less depression above theta_p than in
       the depression window), so synapses only grow relative to others through the renormalization of the 'pre'
       or 'l1' bound
-    - BU_GAIN_BLIND: x_in a^gate_power (x_bas - theta_bas), the thresholded Hebbian term of the basal drive (before the
-      gain) gated by the apical activation a rescaled to [0, 1] (0 at rest, so silent at gain 1); theta_bas as for
-      BU_HEBB. The simulation's policy does not see the gain (see simulate_seed); BU_GATED_HEBB is the same rule with
-      the gain
-    - BU_APICAL: (x_in - x_bar) (gain - 1) x_bas^2, with x_bar the running average of each input over all time steps
-      (outcome step included, time constant xbar_tau trials, starting at 0 and taken before its update). Silent at
-      gain 1; above it, the synapses of the inputs active at that step are potentiated and those of the absent inputs
-      depressed by their average, in proportion to the square of the neuron's basal drive. The drive at a texture
-      includes that texture's weight, so the preferred texture gains more relative to its weight than the other one,
-      and the 'l1' bound, which takes from all of a neuron's synapses in proportion to their weight, sharpens the
-      preference
+    - BU_APICAL and BU_GAIN_BLIND (whose policy does not see the gain, see simulate_seed): (x_in - x_bar) (gain - 1)
+      x_bas^2, with x_bar the running average of each input over all time steps (outcome step included, time constant
+      xbar_tau trials, starting at 0 and taken before its update). Silent at gain 1; above it, the synapses of the
+      inputs active at that step are potentiated and those of the absent inputs depressed by their average, in
+      proportion to the square of the neuron's basal drive. The drive at a texture includes that texture's weight, so
+      the preferred texture gains more relative to its weight than the other one, and the 'l1' bound, which takes from
+      all of a neuron's synapses in proportion to their weight, sharpens the preference
     :param simulation: Simulation identifier
     :param x_in: Binary vector of the currently active basal inputs (all zero at the outcome time step)
     :param x_bas: Basal activations (before the apical gain)
@@ -181,10 +177,7 @@ def basal_rule(simulation: Simulation, x_in: torch.Tensor, x_bas: torch.Tensor, 
         smooth = CA_SMOOTH * theta_p
         post = (torch.sigmoid((calcium - theta_p) / smooth)
                 - hp['ca_gamma_d'] * torch.sigmoid((calcium - hp['ca_ltd_frac'] * theta_p) / smooth))
-    elif simulation in (Simulation.BU_GAIN_BLIND, Simulation.BU_GATED_HEBB):
-        apical = torch.clamp((x_ap - 1. / MAX_GAIN) / (1 - 1. / MAX_GAIN), 0, 1)  # 0 at rest, 1 at maximal gain
-        post = apical.pow(hp['gate_power']) * (x_bas - rule_state['theta_bas'])
-    elif simulation == Simulation.BU_APICAL:
+    elif simulation in (Simulation.BU_APICAL, Simulation.BU_GAIN_BLIND):
         pre = x_in - rule_state['x_bar']
         rule_state['x_bar'] += (x_in - rule_state['x_bar']) / (hp['xbar_tau'] * N_TIME_STEPS)
         return torch.outer(hp['lr_bas'] * pre, gain(x_ap) - 1) * x_bas ** 2
@@ -252,7 +245,7 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
     w_bas_init = w_bas.clone()
     stim_probs = torch.tensor([1, 0.5, 0.5] + noise_ps) / N_TIME_STEPS
     rule_state = {}
-    if simulation in (Simulation.BU_HEBB, Simulation.BU_GAIN_BLIND, Simulation.BU_GATED_HEBB):
+    if simulation == Simulation.BU_HEBB:
         rule_state['theta_bas'] = (hp['theta_bas_0'] * torch.matmul(stim_probs, w_bas) + BKG).float()
     elif simulation == Simulation.BU_BCM:
         # The sliding threshold starts at theta; at the initial weights and gain 1 it relaxes to theta / bcm_e0_scale
@@ -263,7 +256,7 @@ def simulate_seed(simulation: Simulation = Simulation.DEFAULT, seed: int = 0, fa
     elif simulation == Simulation.BU_CALCIUM:
         # Potentiation threshold relative to the strongest response the neuron can produce at gain 1
         rule_state['theta_p'] = hp['ca_theta_p'] * (w_bas.max(0).values + BKG)
-    elif simulation == Simulation.BU_APICAL:
+    elif simulation in (Simulation.BU_APICAL, Simulation.BU_GAIN_BLIND):
         rule_state['x_bar'] = torch.zeros(n_inputs)  # Running average of each input
     row_sums, col_sums = w_bas.sum(1, keepdim=True).clone(), w_bas.sum(0, keepdim=True).clone()
 
@@ -475,9 +468,12 @@ def get_n_estimated(simulation: Simulation, inhibition: bool = False) -> int:
     Number of first trials of a simulation over which its performance is estimated (see get_performance)
     :param simulation: Simulation identifier
     :param inhibition: Whether the apical dendrites are inhibited (only for the bottom-up plasticity simulations)
-    :return: Number of trials (None: all of them, in the apical inhibition protocol)
+    :return: Number of trials (None: all of them, in the apical inhibition protocol and in the gain-blind simulation,
+    whose seeds can become expert after N_TRIALS)
     """
-    return None if is_inhibited(simulation=simulation, inhibition=inhibition) else N_TRIALS
+    if is_inhibited(simulation=simulation, inhibition=inhibition) or simulation == Simulation.BU_GAIN_BLIND:
+        return None
+    return N_TRIALS
 
 
 def simulate_and_analyse_seed(args: tuple) -> dict:

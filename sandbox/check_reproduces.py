@@ -1,9 +1,9 @@
 """
 Assert that the ported main code (l5apical.simulations.simulate_seed) reproduces the sandbox mirror bit for bit at the
 settings of the figure sets it was ported from: control4 / hebb4 / bcm4 / calcium4 / apical4 / gainblind4 (biological
-regime; gainblind4, the gain-blind policy with the apically gated Hebbian rule, has only its hp.json) and control3 /
-hebb3 / bcm3 / calcium3 / gatedhebb3 (fast-learning regime, where the apical and gain-blind rules have no setting; the
-gated Hebbian rule with the gain has only its hp.json), each without and with apical inhibition, on short runs.
+regime; gainblind4, the gain-blind policy with the apical rule, has only its hp.json) and control3 / hebb3 / bcm3 /
+calcium3 / apical3 (fast-learning regime, where the gain-blind simulation has no setting; apical3, the apical rule at
+its fast-regime theta_0 and TD rate, has only its hp.json), each without and with apical inhibition, on short runs.
 Run:  python -m sandbox.check_reproduces [n_trials]
 """
 import json
@@ -19,8 +19,7 @@ from sandbox.figures import FIG_DIR
 
 CASES = [(Simulation.DEFAULT, Simulation.APICAL_INHIBITION, 'control'), (Simulation.BU_HEBB, None, 'hebb'),
          (Simulation.BU_BCM, None, 'bcm'), (Simulation.BU_CALCIUM, None, 'calcium'),
-         (Simulation.BU_APICAL, None, 'apical'), (Simulation.BU_GAIN_BLIND, None, 'gainblind'),
-         (Simulation.BU_GATED_HEBB, None, 'gatedhebb')]
+         (Simulation.BU_APICAL, None, 'apical'), (Simulation.BU_GAIN_BLIND, None, 'gainblind')]
 
 
 def initial_w_bas(hp: dict, seed: int) -> np.ndarray:
@@ -31,7 +30,7 @@ def initial_w_bas(hp: dict, seed: int) -> np.ndarray:
 
 def main(n_trials=120, seed=1):
     H.N_TRIALS, H.N_TRIALS_AP_INH, S.N_TRIALS = n_trials, n_trials, n_trials // 2  # inhibition lifted half-way
-    H.N_TRIALS_CONTROL = n_trials
+    H.N_TRIALS_CONTROL, H.N_TRIALS_GAIN_BLIND = n_trials, n_trials
     ok = True
     for fast, suffix in ((False, '4'), (True, '3')):
         for sim, sim_inh, name in CASES:

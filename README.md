@@ -30,17 +30,16 @@ The performance traces are extracted with a Python port of the method of Smith e
 
 ### Execution
 
-The simulation results (~8GB) are not stored in this repository. To generate them in the `results` folder, enter
+The simulation results (~10GB) are not stored in this repository. To run all the simulations and plot all the panels, enter
 ```
-python main.py simulate
-```
-
-This will overwrite any simulation outcomes present in the `results` folder. Each simulation runs its seeds in parallel on all available cores, extracts their performance traces with a Python port of the method of Smith et al. (2004) and saves the results once all its seeds are done (all simulations take about 90 minutes on an 8-core machine). If the simulations are interrupted, the results saved before stay complete; rerun `python main.py simulate` to regenerate the others. To extract the performance traces of the saved results again, enter
-```
-python main.py perf
+python main.py
 ```
 
-Once the results exist, plot all the panels (to the folder `panels`, and those of the fast-learning regime to `panels/fast`) with
+This runs every simulation, saves its results in the `results` folder (overwriting any simulation outcomes present there) and then plots all the panels to the folder `panels` (those of the fast-learning regime to `panels/fast`). Each simulation runs its seeds in parallel on all available cores, extracts their performance traces with a Python port of the method of Smith et al. (2004) and saves the results once all its seeds are done (all simulations take about 90 minutes on an 8-core machine, the plotting a few minutes). If the simulations are interrupted, the results saved before stay complete.
+
+Each step can also be run on its own:
 ```
-python main.py plot
+python main.py simulate   # run all the simulations, including the extraction of the performance traces
+python main.py perf       # extract the performance traces of the saved results again
+python main.py plot       # plot all the panels from the saved results
 ```

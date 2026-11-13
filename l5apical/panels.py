@@ -33,7 +33,6 @@ COL_FAST = '#2a78d6'  # Color of the fast-learning regime (against grey for the 
 COL_GAIN_BLIND = COL_CALCIUM  # Color of the gain-blind simulation (only plasticity in fig. S15; against the grey and
 # the green of fig. S14c the farthest of the validated rule colors for color vision deficiencies, OKLab Delta E 18.8 or
 # more, and 8.6:1 contrast on white)
-COL_GATED_HEBB = COL_APICAL  # Color of the gated Hebbian rule with the gain (both in fig. S15), that of the apical rule
 COL_DIVERGED = '0.9'  # Shading of the parameter values at which the simulation diverges in every seed
 COL_PARTLY_DIVERGED = '0.955'  # Shading of those at which it diverges in some seeds but not all
 
@@ -78,18 +77,19 @@ RECRUITED_THRESHOLD = 0.5  # Final apical weight above which a neuron counts as 
 # apical inhibition protocol) and of the bottom-up plasticity simulations
 BU_LABELS = {Simulation.DEFAULT: 'Control', Simulation.BU_HEBB: 'Hebb', Simulation.BU_BCM: 'BCM',
              Simulation.BU_CALCIUM: 'Calcium', Simulation.BU_APICAL: 'Plastic $w^\\mathrm{bas}$',
-             Simulation.BU_GAIN_BLIND: 'Only plasticity', Simulation.BU_GATED_HEBB: 'Both'}
+             Simulation.BU_GAIN_BLIND: 'Only plasticity'}
 BU_COLORS = {Simulation.DEFAULT: 'grey', Simulation.BU_HEBB: COL_HEBB, Simulation.BU_BCM: COL_BCM,
              Simulation.BU_CALCIUM: COL_CALCIUM, Simulation.BU_APICAL: COL_APICAL,
-             Simulation.BU_GAIN_BLIND: COL_GAIN_BLIND, Simulation.BU_GATED_HEBB: COL_GATED_HEBB}
+             Simulation.BU_GAIN_BLIND: COL_GAIN_BLIND}
 
 # Labels and colors of the learning regimes (keyed by the fast option)
 REGIME_LABELS = {False: 'Biological', True: 'Fast'}
 REGIME_COLORS = {False: 'grey', True: COL_FAST}
 # Labels and colors of the three optimized models of fig. S15a and b (user, 2026-11-03): the fast-learning regime (the
-# apical gain without bottom-up plasticity), the gain-blind simulation and the gated Hebbian rule with the gain
-S15_LABELS = ('Only gain', BU_LABELS[Simulation.BU_GAIN_BLIND], BU_LABELS[Simulation.BU_GATED_HEBB])
-S15_COLORS = (BU_COLORS[Simulation.DEFAULT], COL_GAIN_BLIND, COL_GATED_HEBB)  # As control and rule in fig. S14c
+# apical gain without bottom-up plasticity), the gain-blind simulation and the apical rule of fig. S14 with the gain in
+# the fast regime
+S15_LABELS = ('Only gain', BU_LABELS[Simulation.BU_GAIN_BLIND], 'Both')
+S15_COLORS = (BU_COLORS[Simulation.DEFAULT], COL_GAIN_BLIND, COL_APICAL)  # As control and rule in fig. S14c
 # Names of the learning rates of the fast-learning regime in their sweeps (fig. S15e)
 LR_LABELS = {'lr_td': 'TD', 'lr_policy': 'Policy', 'lr_ap': 'Apical weights', 'lr_trace': 'Apical input'}
 
@@ -2353,7 +2353,8 @@ def plot_bu_apical_responses(saving: bool, plot_name: str, fast: bool = False) -
 def plot_paired_expert_trials(saving: bool, plot_name: str, plot_dir: Path, expert_trials: dict,
                               labels: tuple[str, ...], colors: tuple[str, ...], verbose: bool = False,
                               censored_at: float = None, center: str = 'mean',
-                              pairs: tuple[tuple[int, int], ...] = None) -> None:
+                              pairs: tuple[tuple[int, int], ...] = None, y_max: float = N_TRIALS,
+                              y_ticks: tuple[float, ...] = (0, 500, 1000, 1500)) -> None:
     """
     Trials to expert performance of each seed in two or more conditions, without apical inhibition (unperturbed) and
     after the end of the apical inhibition (corrected: counted from trial N_TRIALS on). The seeds are paired (a seed
@@ -2377,6 +2378,8 @@ def plot_paired_expert_trials(saving: bool, plot_name: str, plot_dir: Path, expe
     leaves the median defined while they are fewer than half)
     :param pairs: the pairs of conditions to test (indices into labels), each bracket on the lowest level where it
     overlaps no other, neighbouring ones side by side (None: all neighbouring conditions, side by side)
+    :param y_max: end of the y-axis (the number of trials over which the expert trials are estimated)
+    :param y_ticks: ticks of the y-axis
     """
     set_style()
     fig, ax = plt.subplots(figsize=(PANEL_WIDTH, PANEL_HEIGHT))
@@ -2384,7 +2387,6 @@ def plot_paired_expert_trials(saving: bool, plot_name: str, plot_dir: Path, expe
     protocols = list(expert_trials)
     n_conditions = len(labels)
     group_offset = n_conditions + 0.6  # Distance between the two protocols on the x-axis
-    y_max = N_TRIALS
     n_lines = max(label.count(' ') + 1 for label in labels)  # Lines of the tick labels
     not_expert = any(np.isnan(xp_ts).any() for xp_ts in expert_trials.values())
     # The pairs tested and the level of each bracket: the lowest level on which it overlaps no bracket placed before
@@ -2447,9 +2449,9 @@ def plot_paired_expert_trials(saving: bool, plot_name: str, plot_dir: Path, expe
     ax.set_xlim([-0.5, group_offset * (len(protocols) - 1) + n_conditions - 0.5])
     ax.set_ylim([0, ((1.25 if not_expert else 1.12) + 0.1 * max(levels)) * y_max])
     if not_expert:
-        ax.set_yticks([0, 500, 1000, 1500, y_not_expert], ['0', '500', '1000', '1500', 'n.e.'])
+        ax.set_yticks(list(y_ticks) + [y_not_expert], [f'{t:g}' for t in y_ticks] + ['n.e.'])
     else:
-        ax.set_yticks([0, 500, 1000, 1500])
+        ax.set_yticks(y_ticks)
     ax.spines['left'].set_bounds(0, y_max)
     ax.set_ylabel('Trials to expert')
     ax.spines[['top', 'right', 'bottom']].set_visible(False)
@@ -2698,15 +2700,14 @@ def fs15a_performance(saving: bool = True) -> None:
     """
     Performance traces of each seed of the three models of fig. S15 without apical inhibition: the fast-learning regime
     (only gain), the gain-blind simulation (only plasticity: the policy reads the basal drive without the apical gain,
-    the basal weights learn by the apically gated Hebbian rule) and the same rule with the gain (both), over the
-    N_TRIALS_CONTROL trials of each
+    the basal weights learn by the apical rule of fig. S14) and the same rule with the gain in the fast regime (both),
+    over the first N_TRIALS_CONTROL trials (the gain-blind simulation runs N_TRIALS_GAIN_BLIND)
     :param saving: boolean encoding whether to save (or just display) the plot.
     """
     plot_performance_traces(saving=saving, plot_name='fig_s15a_performance', plot_dir=PLOT_DIR,
                             conditions=[get_bu_results(simulation=Simulation.BU_GAIN_BLIND, all_trials=True),
                                         get_bu_results(simulation=Simulation.DEFAULT, fast=True, all_trials=True),
-                                        get_bu_results(simulation=Simulation.BU_GATED_HEBB, fast=True,
-                                                       all_trials=True)],
+                                        get_bu_results(simulation=Simulation.BU_APICAL, fast=True, all_trials=True)],
                             labels=tuple(S15_LABELS[i] for i in (1, 0, 2)),
                             colors=tuple(S15_COLORS[i] for i in (1, 0, 2)))  # In the order of fig. S15b
 
@@ -2715,29 +2716,31 @@ def get_regime_expert_trials() -> dict[bool, np.ndarray]:
     """
     Get the trials to expert performance of each seed of the three models of fig. S15 without apical inhibition, in
     the order of fig. S15b: the gain-blind simulation (only plasticity), the fast-learning regime without bottom-up
-    plasticity (only gain) and the gated Hebbian rule with the gain (both). A seed draws the same initial weights and
+    plasticity (only gain) and the apical rule with the gain (both). A seed draws the same initial weights and
     the same sequence of stimuli in all three
     :return: for the protocol without apical inhibition (False) the expert trials (models x seeds, nan if not expert)
     """
     runs = [get_bu_results(simulation=Simulation.BU_GAIN_BLIND),
             get_bu_results(simulation=Simulation.DEFAULT, fast=True),
-            get_bu_results(simulation=Simulation.BU_GATED_HEBB, fast=True)]
+            get_bu_results(simulation=Simulation.BU_APICAL, fast=True)]
     return {False: np.array([[r[K_EXPERT_T] for r in results] for results in runs], dtype=float)}
 
 
 def fs15b_paired_expert_trials(saving: bool = True, verbose: bool = False) -> None:
     """
     Trials to expert of each seed of the three models (only plasticity, only gain, both; user, 2026-11-04), without
-    apical inhibition (as fig. S14c, with the median), every pair tested: a seed that does not become expert within the
-    N_TRIALS trials over which the performance is estimated counts as N_TRIALS in the test
+    apical inhibition (as fig. S14c, with the median), every pair tested, on an axis of N_TRIALS_GAIN_BLIND trials (the
+    gain-blind simulation's expert trials are estimated over all of its trials, those of the others over N_TRIALS): a
+    seed that does not become expert counts as N_TRIALS_GAIN_BLIND in the test
     :param saving: boolean encoding whether to save (or just display) the plot.
     :param verbose: boolean encoding whether to print the expert trials and the statistical tests
     """
     plot_paired_expert_trials(saving=saving, plot_name='fig_s15b_paired_expert_trials', plot_dir=PLOT_DIR,
                               expert_trials=get_regime_expert_trials(),
                               labels=tuple(S15_LABELS[i] for i in (1, 0, 2)),
-                              colors=tuple(S15_COLORS[i] for i in (1, 0, 2)), verbose=verbose, censored_at=N_TRIALS,
-                              center='median', pairs=((0, 1), (1, 2), (0, 2)))
+                              colors=tuple(S15_COLORS[i] for i in (1, 0, 2)), verbose=verbose,
+                              censored_at=N_TRIALS_GAIN_BLIND, center='median', pairs=((0, 1), (1, 2), (0, 2)),
+                              y_max=N_TRIALS_GAIN_BLIND, y_ticks=(0, 1000, 2000, 3000))  # Clear of the n.e. row
 
 
 def fs15c_theta0_w_ap(saving: bool = True) -> None:

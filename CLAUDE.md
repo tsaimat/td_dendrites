@@ -9,9 +9,9 @@ Simulation code and figure generation for the manuscript "Error representations 
 texture discrimination task; 1000 L5 pyramidal neurons receive mixed-selective basal input (lognormal weights from the
 three task stimuli and 30 distractors) and a top-down TD-error signal onto their apical dendrites, which
 multiplicatively gates somatic output. Variants add bottom-up (basal) plasticity (`hebb`, `bcm`, `calcium`, and
-`apical`, gated by the apical gain, biological regime only) and a fast-learning regime. There is no test suite;
-correctness is checked by regenerating the panels in `panels/` and comparing them to the manuscript figures, and the
-trial loop against the sandbox mirror (`python -m sandbox.check_reproduces`).
+`apical`, gated by the apical gain, also with a policy that does not see the gain) and a fast-learning regime. There is
+no test suite; correctness is checked by regenerating the panels in `panels/` and comparing them to the manuscript
+figures, and the trial loop against the sandbox mirror (`python -m sandbox.check_reproduces`).
 
 ## Environment and commands
 
@@ -21,12 +21,13 @@ requirements.txt`) and use only that `tdd` env. No Matlab: `helper.smith_analysi
 estimator of the performance traces.
 
 ```
-python main.py plot          # (default) plot all panels to panels/ (fast regime: panels/fast/), with svg/ copies
+python main.py               # simulate, then plot (both steps below in one go; the default since 2026-11-13, user)
 python main.py simulate      # rerun every simulation, including the performance traces (about 90 min on 8 cores)
 python main.py perf          # extract the performance traces of the saved results again
+python main.py plot          # plot all panels to panels/ (fast regime: panels/fast/), with svg/ copies
 ```
 
-`simulate` runs the 22 runs of `get_runs()`, then the `theta_0` sweeps of the biological and of the fast regime (the
+`simulate` runs the 20 runs of `get_runs()`, then the `theta_0` sweeps of the biological and of the fast regime (the
 fast one 7.4 min) and the learning-rate sweeps of the fast regime (54 runs, 42 min). Each `simulate_seeds()` call runs
 its 10 seeds in
 parallel processes with one torch thread each (results do not depend on the thread count), adds each seed's Smith
@@ -54,10 +55,12 @@ oversubscribe the cores, and `python -m sandbox.check_reproduces` took over 20 m
   (`KEYS_1D` per-trial vectors, `KEYS_2D` trials x (time steps or neurons)). Biological regime: `results_default.pickle`
   (`DEFAULT`), `results_perturbed.pickle` (`APICAL_INHIBITION`), `results_{hebb,bcm,calcium,apical,gain_blind}.pickle`
   and `results_{hebb,bcm,calcium,apical,gain_blind}_perturbed.pickle` (`BU_*` without and with apical inhibition; the
-  `gain_blind` runs since 2026-11-02, the unperturbed one 2200 trials like `DEFAULT`). `results/fast/` holds the same
-  files except the `apical` and `gain_blind` ones (`BU_APICAL` and `BU_GAIN_BLIND` have no fast-regime setting), plus
-  `results_gated_hebb.pickle` and `results_gated_hebb_perturbed.pickle` (`BU_GATED_HEBB`, fast regime only, since
-  2026-11-03, the unperturbed one 2200 trials), for the fast-learning regime (its `DEFAULT` and `APICAL_INHIBITION` are
+  `gain_blind` runs since 2026-11-02, with the apical rule since 2026-11-12, the unperturbed one 2200 trials like
+  `DEFAULT`). `results/fast/` holds the same files except the `gain_blind` ones (`BU_GAIN_BLIND` has no fast-regime
+  setting; the fast `apical` run since 2026-11-12, 2200 trials, and neither it nor `gain_blind` has an inhibition run
+  since then, `S15_SIMULATIONS`; the
+  `gated_hebb` runs of 2026-11-03 to 12 are in `sandbox/results/scratch_2026-11-12_onerule/old_results/`), for the
+  fast-learning regime (its `DEFAULT` and `APICAL_INHIBITION` are
   read by `panels/fast/` and S15), `results/theta_0/t_<theta_0>.pickle` the `theta_0` sweep of `DEFAULT` and
   `results/fast/theta_0/t_<theta_0>.pickle` that of the fast regime (2026-10-23; 1 to 5 in steps of 0.5), and
   `results/fast/<lr>/<lr>_<value>.pickle` the learning-rate sweeps of the fast regime (2026-10-24: `lr_td`, `lr_policy`,
@@ -91,8 +94,9 @@ oversubscribe the cores, and `python -m sandbox.check_reproduces` took over 20 m
   other key bit-identical), its fast twin `results/fast/results_default.pickle` (re-simulated 2026-10-23, every other
   key bit-identical, 307 MB) and the two `apical` runs (new on 2026-10-22); the other runs get it at the next `python
   main.py simulate` (about 1.7 GB more). Sizes: 375 MB (`DEFAULT`, 2200 trials), 518 MB (`APICAL_INHIBITION`), 284 / 625
-  MB (`BU_*` without / with inhibition; 356 / 786 MB for `apical`, which has `x_som_cue`; 434 / 786 MB for `gain_blind`
-  and `gated_hebb`), 10.8 GB for the 22 runs, 1.8 MB per sweep value.
+  MB (`BU_*` without / with inhibition; 356 / 786 MB for `apical`, which has `x_som_cue`; 434 MB for `gain_blind` and
+  the fast `apical`, 2200 trials; 786 MB for `gain_blind` since it runs 4000 trials), 9.6 GB for the 20 runs, 1.8 MB per
+  sweep value.
 - The results are not stored in git (user, 2026-10-24): `/results/` is in `.gitignore`, and the LFS pointers of the
   pre-port `results_default.pickle` and `results_perturbed.pickle` were removed (history keeps them). `.gitattributes`
   still routes `*.pickle` to LFS as a guard; never `git add` a result (GitHub rejects files over 100 MB, and the
@@ -108,12 +112,13 @@ oversubscribe the cores, and `python -m sandbox.check_reproduces` took over 20 m
 - `helper.py`: model constants (neuron and distractor counts, the lognormal init `INIT_SIGMA`, `INIT_SCALE`,
   `INIT_CLIP`, trial timing in time steps at `HZ` = 4 steps/s), `HYPERPARAMETERS` (`theta_0` and the learning rates of
   the policy, TD estimator, apical weights and apical afferent trace for the `biological` and `fast` regimes),
-  `RULE_HYPERPARAMETERS` (bound, `lr_bas` and rule constants per regime and `BU_*` member; `BU_APICAL` has no
-  fast-regime setting), the `Simulation` and `Outcome` enums, the apical transfer and gain functions, `get_path()` (maps
-  a simulation and its `fast`, `inhibition`, `theta_0` and `lr` options to its results file), `get_bu_simulations()`
-  (the `BU_*` members with a setting in a regime), `get_runs()` (the 22 runs), `get_run_name()`, `get_thetas_0()` (the
-  sweep values of a regime), `LEARNING_RATES` and `get_learning_rates()` (the values of the learning-rate sweeps of the
-  fast regime), and `smith_analysis()`, the
+  `RULE_HYPERPARAMETERS` (bound, `lr_bas` and rule constants per regime and `BU_*` member, and the regime values a
+  member replaces; `BU_GAIN_BLIND` has no fast-regime setting), `S15_SIMULATIONS` (the `BU_*` runs of S15, which
+  last `N_TRIALS_CONTROL` trials and have no inhibition run), the `Simulation` and `Outcome` enums, the apical transfer
+  and gain functions, `get_path()` (maps a simulation and its `fast`, `inhibition`, `theta_0` and `lr` options to its
+  results file), `get_bu_simulations()` (the `BU_*` members with a setting in a regime), `get_runs()` (the 20 runs),
+  `get_run_name()`, `get_thetas_0()` (the sweep values of a regime), `LEARNING_RATES` and `get_learning_rates()` (the
+  values of the learning-rate sweeps of the fast regime), and `smith_analysis()`, the
   Python port of the learning-curve estimator of Smith et al. (2004) (`runanalysisv3.m` and its helpers; exact
   logit-normal quantiles instead of the Monte Carlo ones; validated against the Matlab output: identical learning and
   expert trials, traces within 3e-3).
@@ -179,21 +184,21 @@ oversubscribe the cores, and `python -m sandbox.check_reproduces` took over 20 m
   the unperturbed cases", `fs15a` draws the unperturbed performance traces of the fast regime and of `BU_GAIN_BLIND`
   together over 2200 trials, `plot_performance_traces()`, legend above the axes), `fs15b` fig. S14c's paired expert
   trials, since 2026-11-03 the three optimized models without inhibition, `S15_LABELS` 'Only gain' (the fast regime),
-  'Only plasticity' (`BU_GAIN_BLIND`) and 'Both' (`BU_GATED_HEBB`), colors `S15_COLORS` (blue, orange, `COL_GATED_HEBB`
-  purple), only gain tested against each other (`pairs`, stacked brackets), with median bars and a seed that is not
-  expert counted at N_TRIALS in the signed-rank test (`plot_paired_expert_trials()`, which
-  `plot_bu_paired_expert_trials()` calls for S14c, takes any number of conditions and of protocols, tests neighbouring
-  conditions, draws seeds that are not expert as open markers in an 'n.e.' row above the axis, a seed expert during the
-  inhibition at 0 of the corrected protocol, `censored_at` and `center` 'median'; S14c renders pixel-identical), `fs15c`
-  fig. S12b's `theta_0` panel in the fast regime (`plot_theta0_w_ap()`, the same as the fast S12b replot), `fs15d` the
-  expert trials of the fast `theta_0` sweep (`get_theta_0_sweep()`) and `fs15e`, two panels wide, those of the
-  learning-rate sweeps (`get_learning_rate_sweep()`, `LR_LABELS`). d and e share `plot_expert_trials_sweep()` (a cross
-  at the regime's value) and are each laid out with the other's decoration as a stand-in, replaced after
-  `adjust_figure()` (d with a title, e with d's `theta_0` label), so that their axes have the same bottom and top and
-  the y ticks align across the row. b reads both regimes (`get_regime_expert_trials()`, `REGIME_LABELS`,
-  `REGIME_COLORS`: grey and `COL_FAST` `#2a78d6`, validated for color vision deficiencies against grey and
-  `COL_RESTORED`). Nothing plots the hebb, bcm and calcium runs or the fast `BU_*` runs. Figure dimensions are in
-  cm-derived constants at the top of the file and output is PDF at `DPI` plus an SVG copy.
+  'Only plasticity' (`BU_GAIN_BLIND`) and 'Both' (the fast `BU_APICAL` since 2026-11-12, `BU_GATED_HEBB` before),
+  colors `S15_COLORS` (grey, `COL_GAIN_BLIND` purple, `COL_APICAL` green), only gain tested against each other (`pairs`,
+  stacked brackets), with median bars and a seed that is not expert counted at N_TRIALS in the signed-rank test
+  (`plot_paired_expert_trials()`, which `plot_bu_paired_expert_trials()` calls for S14c, takes any number of conditions
+  and of protocols, tests neighbouring conditions, draws seeds that are not expert as open markers in an 'n.e.' row
+  above the axis, a seed expert during the inhibition at 0 of the corrected protocol, `censored_at` and `center`
+  'median'; S14c renders pixel-identical), `fs15c` fig. S12b's `theta_0` panel in the fast regime (`plot_theta0_w_ap()`,
+  the same as the fast S12b replot), `fs15d` the expert trials of the fast `theta_0` sweep (`get_theta_0_sweep()`) and
+  `fs15e`, two panels wide, those of the learning-rate sweeps (`get_learning_rate_sweep()`, `LR_LABELS`). d and e share
+  `plot_expert_trials_sweep()` (a cross at the regime's value) and are each laid out with the other's decoration as a
+  stand-in, replaced after `adjust_figure()` (d with a title, e with d's `theta_0` label), so that their axes have the
+  same bottom and top and the y ticks align across the row. b reads both regimes (`get_regime_expert_trials()`,
+  `REGIME_LABELS`, `REGIME_COLORS`: grey and `COL_FAST` `#2a78d6`, validated for color vision deficiencies against grey
+  and `COL_RESTORED`). Nothing plots the hebb, bcm and calcium runs (S15 plots the fast `BU_APICAL`). Figure dimensions
+  are in cm-derived constants at the top of the file and output is PDF at `DPI` plus an SVG copy.
 - `parula.py`: Matlab parula colormap data.
 
 Adding a new simulation variant means: an enum member in `Simulation` (and in `BU_SIMULATIONS` for a basal rule, which
@@ -265,7 +270,13 @@ https://claude.ai/artifact/RLKDcxMWXSfNuMnLYLshVd (the rule exploration and the 
 `sandbox/results/pages/plasticity_record.html`, images in `sandbox/results/pages/img/`). On 2026-11-12 the user pasted
 the old manuscript legends of figs. 4 and S11 to S13 and Table S1 into the status page; the page now holds the
 corrected legends, drafts of the S14 and S15 legends and Table S1 with one column per model (the user removed the
-review tags, the pasted versions and some rows the same day; version 18 with them is artifact history), and the
+review tags, the pasted versions and some rows the same day; version 18 with them is artifact history; later that
+day, user, Table S1 also lost the rows Rule, Initial basal synaptic weights, Time step and Initial apical synaptic
+weights, the basal learning rate reads 0 without plasticity and the distractor row 30, x_bar's time constant one
+value; the user also removed the boxes "Still to change", "Open decisions" and the notes, so the page holds the panels
+with their legends and Table S1; their content is in this file; figure titles, user: S14 "Bottom-up plasticity of
+the basal synapses gated by the apical gain." kept, S15 "Compare gain modulation and bottom-up plasticity with
+parameters optimized for learning speed."), and the
 earlier status version is in `sandbox/results/pages/figure_status_2026-11-04.html`. The 16 earlier review and
 decision pages were deleted that day; where they are cited below, their local sources are named instead. Update these
 two pages (republish the same files) rather than publishing new ones, and delete any page that a later decision
@@ -624,7 +635,12 @@ supersedes.
   (Kaplan-Meier style; fast 10 of 10 by trial 382, no gain 9 of 10 by 1188; log-rank, statsmodels `survdiff`, p
   0.003). Open for the user: A or B, the measure (Smith expert trial or trials to 0.8, which the user has not answered),
   and the rest of S15 (gate power, the parameter search, e's axis titles).
-- Nothing else is left to review in figs. 4 and S11 to S14 (S14a, the schematic, is still to be drawn).
+- Nothing else is left to review in figs. 4 and S11 to S14. S14a, the schematic, was drawn by the user on 2026-11-12
+  (an Inkscape SVG on the figure status page, a copy in `sandbox/results/pages/img/fig_s14a_schematic.svg`, not in
+  `panels/`). Open (it was on the page's box "Open decisions" until the user removed the box on 2026-11-12): its
+  notation, the presynaptic activity x_j where fig. S11A names the stimuli s_Go, s_NoGo, s_Cue, s_1 ... (and s^C is
+  the conditioned salience), the basal weight w^bas_ji (input j onto neuron i) where Eq. S11 writes w^bas_ij, and the
+  input label Tone where fig. S11A says Cue (the replotted panels already say Tone).
 - Legends of 2026-11-12 (user: the old manuscript legends pasted into the status page, "correct these legends";
   then "update Table S1 and add one column for each different model", S14 and S15 legends in the same style, "make
   the panel whiskers match the legend", "4f make it the s.e.m."): the box plots of f4g and S13 have their whiskers at
@@ -638,15 +654,17 @@ supersedes.
   and e, no error bar for a single expert seed). The draft helpers without panels keep `np.std`. Open for the user:
   the windows of f4d and S11d (naive the first 5 trials: Hit trials in 5 seeds, CR 9, FA 8; expert the last 50: FA
   trials in 2 seeds only, so S11d's expert FA rests on 2 seeds; the first 20 trials have every type in every seed,
-  and every seed has 19 to 32 FA trials from its expert trial on). Other points listed on the page: S11e has no soma
-  raster, the outcome dendrite rows of 4e and S11e repeat, the box plots' axes reach 2. Panels and code before each
-  change, PNGs before and after: `sandbox/results/scratch_2026-11-12_legends/` (`before/`, `before2/`).
+  and every seed has 19 to 32 FA trials from its expert trial on). Other points (on the page until the user removed its
+  box "Still to change" on 2026-11-12): S11e has no soma raster, the outcome dendrite rows of 4e and S11e repeat, the
+  box plots' axes reach 2. Panels and code before each change, PNGs before and after:
+  `sandbox/results/scratch_2026-11-12_legends/` (`before/`, `before2/`).
 - Review and experiments of 2026-11-03, evening (user): S12b's theta_0 axis starts at 1 (done, `set_xlim`); S15b keeps
   option A (option B, the fraction of agents expert, perhaps added later) and the Smith measure; S15b labels "only
   gain", "only plasticity" and "both" (drawn capitalized). New sandbox models (details and numbers in
   `sandbox/NOTES.md`, section "Gain plus plasticity ... and plasticity from the policy loss"): (1) "both", the gated
   Hebbian rule of `BU_GAIN_BLIND` with the gain reaching the policy, optimized from the fast regime: ported as
-  `Simulation.BU_GATED_HEBB` (rule name `gated_hebb`, fast regime only: `l1`, `lr_bas` 0.512, `theta_bas_0` 14,
+  `Simulation.BU_GATED_HEBB` (replaced on 2026-11-12 by the apical rule, see the bullet "One rule for S14 and S15";
+  rule name `gated_hebb`, fast regime only: `l1`, `lr_bas` 0.512, `theta_bas_0` 14,
   `GATE_POWER`, theta_0 2.5, lr_td 0.002), 10 of 10 expert at 124 (96-160) against 230, faster in 10 of 10 (p 0.002),
   after the lift 10 of 10 (80-139); `check_reproduces` 22/22 (`gatedhebb3`); a first port at TD 0.003, chosen on seeds
   0-4, failed on seeds 6 (divergence) and 8 (late relapse, Smith expert 1609) and was replaced after a search on seeds
@@ -655,28 +673,29 @@ supersedes.
   0.128, lr 50: 10 of 10, 304, 0.8 reached in 10 of 10 (397-932), final 0.87. Open for the user: option B, S15a with
   the "both" traces, the gate power, the parameter search, e's axis titles.
 - Review of 2026-11-04 (user): S15 reuses fig. S14c's colors, grey (`BU_COLORS[DEFAULT]`) for only gain and the apical
-  rule's green (`COL_APICAL`, `COL_GATED_HEBB`) for both, with purple (`COL_GAIN_BLIND` = `COL_CALCIUM`, `#4a3aa7`) for
-  only plasticity: checked with the dataviz skill's validator (`validate_palette.py`, OKLab Delta E under normal,
-  deutan, protan and tritan vision), purple is 18.8 or more from grey and 26.6 or more from green in every case, 8.6:1
-  on white (orange `#eb6834`: 9.2 from green for deutans, blue `#2a78d6`: 9.6 for tritans); the grey-green pair itself
-  is 7.7 for deutans, within the 6-8 band that the labels of both panels allow. `fs15a` draws the both traces too (three
-  conditions, legend in one row above the axes). "Only plasticity" and "both" were already in the main code
-  (`BU_GAIN_BLIND`, `BU_GATED_HEBB`, run by `python main.py simulate`). The figure status page writes the S14 rule as dw
-  = eta (x_pre - x_bar_pre) (g - 1) x_bas^2 and says why x_bas is squared (the `l1` normalization takes from every
-  synapse in proportion to its weight, so only an update that grows faster than linearly with the drive, a power above
-  about 1.5, gives the preferred texture a larger gain relative to its weight and sharpens the preference). S15b (user,
-  same day): the order only plasticity, only gain, both, and every pair tested (`pairs` ((0, 1), (1, 2), (0, 2)); each
-  bracket on the lowest level where it overlaps no other, so the two neighbouring ones side by side and the outer one
-  above; S14c pixel-identical): signed-rank p 0.006, 0.002 and 0.002. Then (user): S15a's legend in the same order (and
-  the traces drawn in it), and S14b's unperturbed traces in the rule's green of S14c (`plot_inhibition_performance()`
-  takes `color`, default grey, so f4h is pixel-identical); that green and the inhibition protocol's `COL_RESTORED` are
-  OKLab Delta E 10.4 apart under normal vision (7.6 tritan), below the dataviz floor of 15, but the two protocols rise
-  at different times and the bars below the axes name them. S15c (user, same day): the colorbars of fig. S12b's traces
-  (the bins of initial basal weight, distractor color to the go or no-go color, 0 to 0.35), horizontal above each axes
-  (`plot_theta0_w_ap(colorbars=True)`, only S15c; the axes lowered by `THETA0_COLORBAR_ROOM`, each bar, 0.04 of the axes
-  high, as long as the x axis line from theta_0 1 to 5 (inset in data x coordinates), its end labels aligned inwards so
-  the two bars' labels stay apart, the label in the row of the end ticks; user: "less thick and longer ... the same
-  length as the x axes"); S12b's theta_0 panel pixel-identical in both regimes.
+  rule's green (`COL_APICAL`, until 2026-11-12 also as `COL_GATED_HEBB`) for both, with purple (`COL_GAIN_BLIND` =
+  `COL_CALCIUM`, `#4a3aa7`) for only plasticity: checked with the dataviz skill's validator (`validate_palette.py`,
+  OKLab Delta E under normal, deutan, protan and tritan vision), purple is 18.8 or more from grey and 26.6 or more from
+  green in every case, 8.6:1 on white (orange `#eb6834`: 9.2 from green for deutans, blue `#2a78d6`: 9.6 for tritans);
+  the grey-green pair itself is 7.7 for deutans, within the 6-8 band that the labels of both panels allow. `fs15a` draws
+  the both traces too (three conditions, legend in one row above the axes). "Only plasticity" and "both" were already in
+  the main code (`BU_GAIN_BLIND`, `BU_GATED_HEBB`, run by `python main.py simulate`). The figure status page writes the
+  S14 rule as dw = eta (x_pre - x_bar_pre) (g - 1) x_bas^2 and says why x_bas is squared (the `l1` normalization takes
+  from every synapse in proportion to its weight, so only an update that grows faster than linearly with the drive, a
+  power above about 1.5, gives the preferred texture a larger gain relative to its weight and sharpens the preference).
+  S15b (user, same day): the order only plasticity, only gain, both, and every pair tested (`pairs` ((0, 1), (1, 2), (0,
+  2)); each bracket on the lowest level where it overlaps no other, so the two neighbouring ones side by side and the
+  outer one above; S14c pixel-identical): signed-rank p 0.006, 0.002 and 0.002. Then (user): S15a's legend in the same
+  order (and the traces drawn in it), and S14b's unperturbed traces in the rule's green of S14c
+  (`plot_inhibition_performance()` takes `color`, default grey, so f4h is pixel-identical); that green and the
+  inhibition protocol's `COL_RESTORED` are OKLab Delta E 10.4 apart under normal vision (7.6 tritan), below the dataviz
+  floor of 15, but the two protocols rise at different times and the bars below the axes name them. S15c (user, same
+  day): the colorbars of fig. S12b's traces (the bins of initial basal weight, distractor color to the go or no-go
+  color, 0 to 0.35), horizontal above each axes (`plot_theta0_w_ap(colorbars=True)`, only S15c; the axes lowered by
+  `THETA0_COLORBAR_ROOM`, each bar, 0.04 of the axes high, as long as the x axis line from theta_0 1 to 5 (inset in data
+  x coordinates), its end labels aligned inwards so the two bars' labels stay apart, the label in the row of the end
+  ticks; user: "less thick and longer ... the same length as the x axes"); S12b's theta_0 panel pixel-identical in both
+  regimes.
 - Fast-learning regime (user, 2026-10-23: "figure out how or whether to show the fast parameter optimization simulations
   ... replot all the control results with the fast parameters ... feel free to add an other supplementary figure"):
   every panel of figs. 4 and S11 to S13 but S11b/c is redrawn from control3 into `panels/fast/` (same file names), and a
@@ -797,6 +816,42 @@ supersedes.
   experts). Of the panels sharing the functions (f4h both regimes, S14b, S14c, f4h_w_ap) all render pixel-identical.
   Open for the user: S15's layout (a now two panels, 'Fast' and 'No gain'), the gate power, and how to present the
   parameter search ("not sure yet").
+- One rule for S14 and S15 (user, 2026-11-12: "I don't like the idea of having two different plasticities presented in
+  different figures"; sandbox only, details in `sandbox/NOTES.md`, section "One rule for S14 and S15"): S14's rule
+  (`BU_APICAL`, rule A) was searched in the two S15 conditions on seeds 0-9 (116 settings, `sandbox/results/gainless/`
+  `s19` to `s22`); gated Hebb (rule B, `BU_GAIN_BLIND` / `BU_GATED_HEBB`) had been optimized in all three. Expert
+  trials, rule A against rule B: S14 988 against 403 (seeds 0-39, control 1122; rule B at gate power 0.25, sandbox
+  only); only plasticity 5 of 10 expert at best (theta_0 2, policy 0.256, `lr_bas` 0.02; policy alone 1 of 10) against
+  9 of 10 (also at theta_0 1.75 and 2); both 308 at best (theta_0 3.5, TD 0.003, `lr_bas` 0.01; 318 without the rule at
+  those rates), slower than only gain (230) in every seed of every stable setting, against 124. Rule B's speed is
+  pruning indifferent to task relevance (2.2 inputs per neuron left of 7.4, each neuron's two initially strongest
+  inputs raised, the task inputs' share of the input 9.1 to 5.3 percent); rule A raises that share to 17 percent on
+  the recruited neurons. Decision (user, 2026-11-12: "S14 rule everywhere ... replace it in the main code, rerun and
+  replot everything in figure s15"; then "no need for the apical inhibition experiment for the fs15 simulations"):
+  `BU_GAIN_BLIND` has the apical rule (`l1`, `lr_bas` 0.02, `xbar_tau` 50, theta_0 2, `lr_policy` 0.256), `BU_APICAL`
+  a fast-regime setting (`l1`, `lr_bas` 0.01, `xbar_tau` 50, theta_0 3.5, `lr_td` 0.003) and is S15's 'Both';
+  `BU_GATED_HEBB`, `GATE_POWER` and the gated branch of `basal_rule()` are gone, `S15_SIMULATIONS` (helper) makes the
+  two runs 2200 trials long and leaves out their inhibition runs (`get_runs()` 20 runs); `check_reproduces` 22/22
+  (`gainblind4` re-pointed, `apical3` new, `gatedhebb3` dropped). Results (the runs equal the scans seed by seed): only
+  plasticity 5 of 10 expert (1461, 687, 1578, 1690, 1254 for seeds 1, 2, 3, 5, 8; the others at 0.46-0.54 correct over
+  the last 200 of 2200 trials), both 308 +- 81 (370, 237, 226, 253, 395, 372, 251, 292, 233, 449; median 272), only gain
+  median 211; every pair signed-rank p 0.002, both slower than only gain in 10 of 10. S15b draws no median bar for only
+  plasticity (half the seeds not expert, so the median is undefined; the legend says so). S15c to e render
+  pixel-identical. The gated runs, the code before the change, the old S15 panels, the run script, the number script
+  and the page sources before the cleanup are in `sandbox/results/scratch_2026-11-12_onerule/`. Both pages were updated
+  (status page version 22 from the live version 21, which had the user's S14a schematic and the notation item;
+  plasticity record version 6). Then (user: "for fs15 please run the simulations for only plasticity for 4000 trials
+  ... panel b does not need this n.e. thing and can just use real values. panel a can keep the same bounds"):
+  `BU_GAIN_BLIND` runs `N_TRIALS_GAIN_BLIND` (4000) trials, estimated over all of them (`get_n_estimated()` None), S15b
+  on a 4000-trial axis (`plot_paired_expert_trials()` takes `y_max` and `y_ticks`, S14c pixel-identical), S15a still to
+  2200. Trials 0-2199 equal the 2200-trial run in every seed (kept in
+  `sandbox/results/scratch_2026-11-12_onerule/gain_blind_2200/`). Seeds 2 and 6 diverge (the TD value estimate) at
+  trials 3094 and 3746 after learning (seed 2 expert at 686 over the trials before, seed 6 at 3422), so the Smith
+  estimate over 4000 trials counts them not expert; the other 8: 2348, 1458, 1576, 1925, 1692, 2160, 1251, 2323. The
+  user kept the two diverged seeds not expert (n.e. row; the options were their estimate up to the divergence or a
+  setting stable over 4000 trials): S15b median 2043 for only plasticity, ticks to 3000 on the 4000-trial axis (clear of
+  the n.e. row), every pair p 0.002; the pages say so (status page version 23, plasticity record version 7). Open for
+  the user: S15's reading with this rule (both slower than only gain).
 
 ### Model state (decided in the sandbox)
 
@@ -868,7 +923,8 @@ supersedes.
    done, f4d, S11b and S11d approved on 2026-11-02, f4c, f4e, f4h, S11, S12, S13 approved on 2026-11-03 and S14 for now;
    open: S15b's form and measure and the rest of S15; see Figure review). S14, the bottom-up plasticity figure of the
    biological regime, shows the apical rule alone (`BU_APICAL`, ported 2026-10-22, see the final-rule bullet) and was
-   approved by the user on 2026-10-23 (b to f; a, the schematic of the rule, is still to be drawn; see Figure review).
+   approved by the user on 2026-10-23 (b to f; a, the schematic of the rule, drawn by the user on 2026-11-12; see Figure
+   review).
    hebb, bcm and calcium have no panels since then (their `plot_bu_*` helpers, the five-condition PDFs in
    `panels/s14_rules_draft/` and their results are kept), so their open decisions (`ca_beta`, see the equations bullet;
    the re-tuned gated rules of 2026-10-18; the framing after the 2026-10-19 ablation, the rules' speed-up does not need
@@ -892,8 +948,8 @@ supersedes.
    mechanism in Figure review.
 3. Results hosting (user, 2026-10-24): the results stay out of git (8.3 GB against GitHub's free 10 GiB of LFS storage
    and 10 GiB of monthly bandwidth); once the figures are final, archive them (Zenodo proposed) and link the archive in
-   the README, which for now says to run `python main.py simulate`. Upstream's `clean` branch (the fork has none): ask
-   where it lives, then update it. Slimming (user, 2026-10-16: only once the figures are final): never read are
+   the README, which for now says to run `python main.py` (simulate, then plot). Upstream's `clean` branch (the fork
+   has none): ask where it lives, then update it. Slimming (user, 2026-10-16: only once the figures are final): never read are
    `gain` outside the biological `DEFAULT` (1.8 GB), `w_ap`
    outside it beyond neurons 0 to 2 and the last trial (1.8 GB; the biological `APICAL_INHIBITION` needs neurons 1 and
    2), `x_som_texture` in the 8 inhibition runs (1.3 GB) and `w_bas_final` (a copy of `w_bas` or of the last snapshot,
